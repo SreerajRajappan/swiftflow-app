@@ -1,0 +1,47 @@
+/* app/styles/PersonalizerTab.css */
+
+.personalizer-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px; /* Polaris standard gap */
+  align-items: stretch;
+  width: 100%;
+}
+
+.personalizer-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Force the Card's internal div to be flex so the tip stays at bottom */
+.personalizer-card > div:first-child {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.preview-area {
+  background: var(--p-color-bg-surface-secondary);
+  border-radius: var(--p-border-radius-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  min-height: 200px;
+}
+
+.bubble {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 24px;
+  border-radius: 50px;
+  border: 2px solid;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.tip-wrapper {
+  margin-top: auto;
+}

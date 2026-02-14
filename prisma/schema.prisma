@@ -37,6 +37,7 @@ model AppSettings {
   // Basic Tier: Personalizer
   customText      String   @default("Your Name Here")
   customColor     String   @default("#5c6ac4")
+  fontSize        Int      @default(16)
   
   // Pro Tier: Delivery & Recovery
   deliveryRadius  Float    @default(10.0)
