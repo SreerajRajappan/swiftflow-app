@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken  String?
+  refreshTokenExpires DateTime?
+}
+
+model AppSettings {
+  id              String   @id @default(uuid())
+  shop            String   @unique
+  
+  // Basic Tier: Personalizer
+  customText      String   @default("Your Name Here")
+  customColor     String   @default("#5c6ac4")
+  
+  // Pro Tier: Delivery & Recovery
+  deliveryRadius  Float    @default(10.0)
+  recoveryEnabled Boolean  @default(false)
+  isEnabled       Boolean  @default(true) 
+  
+  updatedAt       DateTime @updatedAt
+}
+
+model ProductView {
+  id        Int      @id @default(autoincrement())
+  shop      String
+  productId String
+  createdAt DateTime @default(now())
+}
+
+model Conversion {
+  id          Int      @id @default(autoincrement())
+  shop        String
+  productId   String
+  amount      Float    // The order subtotal
+  createdAt   DateTime @default(now())
+
+  @@index([shop])
+}
+

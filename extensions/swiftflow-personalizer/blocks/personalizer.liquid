@@ -1,0 +1,43 @@
+<div class="swiftflow-container" 
+     style="padding: 20px; border: 1px solid #e1e3e5; border-radius: 8px; margin: 15px 0; background: #fafbfb;">
+  
+  <h4 style="margin-bottom: 10px; font-weight: 600;">
+    {{ block.settings.heading | default: "Customization Options" }}
+  </h4>
+
+  <div class="swiftflow-field" style="margin-bottom: 15px;">
+  <label style="display: block; font-size: 0.9em; margin-bottom: 5px;">{{ block.settings.label }}</label>
+  
+  <input type="text" 
+         id="sf-custom-text"
+         name="properties[Personalization]" 
+         form="product-form-{{ section.id }}"
+         placeholder="Type here..." 
+         style="width: 100%; padding: 10px; border: 1px solid #c9cccf; border-radius: 4px;">
+    </div>
+
+  <div class="sf-preview-area" style="text-align: center; padding: 10px; border: 1px dashed #5c6ac4; border-radius: 4px;">
+    <span id="sf-preview-output" style="font-weight: bold; color: {{ block.settings.preview_color }};">
+      Preview: Your Text Here
+    </span>
+  </div>
+</div>
+
+<script>
+  // handle the live preview on the storefront
+  document.getElementById('sf-custom-text').addEventListener('input', function(e) {
+    document.getElementById('sf-preview-output').innerText = e.target.value || "Your Text Here";
+  });
+</script>
+
+{% schema %}
+{
+  "name": "SwiftFlow Personalizer",
+  "target": "section",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Personalize Your Order" },
+    { "type": "text", "id": "label", "label": "Input Label", "default": "Enter your name:" },
+    { "type": "color", "id": "preview_color", "label": "Preview Text Color", "default": "#000000" }
+  ]
+}
+{% endschema %}
