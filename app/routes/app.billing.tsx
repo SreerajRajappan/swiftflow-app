@@ -1,4 +1,3 @@
-//app.billing.tsx
 import {
   Page,
   Layout,
@@ -13,25 +12,28 @@ import {
   Box,
   IndexTable,
 } from "@shopify/polaris";
-import { CheckCircleIcon } from "@shopify/polaris-icons";
+import {
+  CheckCircleIcon,
+  StarIcon,
+  CashDollarIcon,
+} from "@shopify/polaris-icons";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { Form, useNavigation } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
 import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "../constants";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-  return null;
+  const { session } = await authenticate.admin(request);
+  return { apiKey: process.env.SHOPIFY_API_KEY, shop: session.shop };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { billing, redirect, session } = await authenticate.admin(request); // Added session
+  const { billing, redirect, session } = await authenticate.admin(request);
 
   const formData = await request.formData();
   const plan = formData.get("plan");
 
-  // Generate a clean return URL using the shop domain
-  // This is often more stable than using process.env.SHOPIFY_APP_URL
+  // Stable return URL for embedded apps
   const returnUrl = `https://admin.shopify.com/store/${session.shop.split(".")[0]}/apps/${process.env.SHOPIFY_API_KEY}/app`;
 
   try {
@@ -45,7 +47,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } catch (error: any) {
     if (error instanceof Response) throw error;
 
-    // Check for the 401 Reauth header we fixed earlier
     const reauthUrl = error.headers?.get?.(
       "X-Shopify-API-Request-Failure-Reauthorize-Url",
     );
@@ -60,13 +61,19 @@ export default function BillingPage() {
   const nav = useNavigation();
   const isSubmitting = nav.state === "submitting" || nav.state === "loading";
 
-  const FeatureItem = ({ text }: { text: string }) => (
+  const FeatureItem = ({
+    text,
+    bold = false,
+  }: {
+    text: string;
+    bold?: boolean;
+  }) => (
     <Box paddingBlockEnd="100">
       <InlineStack gap="300" align="start" blockAlign="center" wrap={false}>
         <Box width="20px">
           <Icon source={CheckCircleIcon} tone="success" />
         </Box>
-        <Text as="span" variant="bodyMd">
+        <Text as="span" variant="bodyMd" fontWeight={bold ? "bold" : "regular"}>
           {text}
         </Text>
       </InlineStack>
@@ -75,164 +82,196 @@ export default function BillingPage() {
 
   return (
     <Page
-      title="Select Your Plan"
+      title="Scale Your Revenue"
+      subtitle="Select the plan that matches your business goals."
       backAction={{ content: "Dashboard", url: "/app" }}
     >
       <BlockStack gap="800">
         <Layout>
           {/* BASIC PLAN */}
+          {/* BASIC PLAN */}
           <Layout.Section variant="oneHalf">
             <Card>
-              <Box minHeight="320px">
+              <Box minHeight="380px">
                 <BlockStack gap="400">
                   <Text as="h2" variant="headingMd">
                     Basic Personalizer
                   </Text>
-                  <Text as="h1" variant="headingLg">
-                    $9.99{" "}
-                    <Text as="span" variant="bodySm" tone="subdued">
-                      / month
+                  <BlockStack gap="100">
+                    <Text as="h1" variant="headingLg">
+                      $4.99{" "}
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        / month
+                      </Text>
                     </Text>
-                  </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Essential branding for growing shops.
+                    </Text>
+                  </BlockStack>
                   <Divider />
                   <BlockStack gap="200">
                     <FeatureItem text="Product Personalizer Widget" />
-                    <FeatureItem text="Custom Color/Text Support" />
-                    <FeatureItem text="Standard Support" />
+                    <FeatureItem text="Custom Colors & CSS" />
+                    <FeatureItem text="Standard Analytics" />
+                    <FeatureItem text="Email Support" />
                   </BlockStack>
                 </BlockStack>
               </Box>
-              <Form method="post">
-                <input type="hidden" name="plan" value={MONTHLY_PLAN_BASIC} />
-                <Button submit loading={isSubmitting} fullWidth size="large">
-                  Select Basic
-                </Button>
-              </Form>
+              <Box paddingBlockStart="400">
+                <Form method="post">
+                  <input type="hidden" name="plan" value={MONTHLY_PLAN_BASIC} />
+                  <Button submit loading={isSubmitting} fullWidth size="large">
+                    Select Basic
+                  </Button>
+                </Form>
+              </Box>
             </Card>
           </Layout.Section>
 
           {/* PRO PLAN */}
           <Layout.Section variant="oneHalf">
             <Card background="bg-surface-secondary">
-              <Box minHeight="320px">
+              <Box minHeight="380px">
                 <BlockStack gap="400">
                   <InlineStack align="space-between">
-                    <Text as="h2" variant="headingMd">
-                      Pro Suite
-                    </Text>
+                    <InlineStack gap="200">
+                      <Icon source={StarIcon} tone="warning" />
+                      <Text as="h2" variant="headingMd">
+                        Pro Suite
+                      </Text>
+                    </InlineStack>
                     <Badge tone="success">7-DAY FREE TRIAL</Badge>
                   </InlineStack>
-                  <Text as="h1" variant="headingLg">
-                    $29.99{" "}
-                    <Text as="span" variant="bodySm" tone="subdued">
-                      / month
+                  <BlockStack gap="100">
+                    <Text as="h1" variant="headingLg">
+                      $29.99{" "}
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        / month
+                      </Text>
                     </Text>
-                  </Text>
+                    <Text
+                      as="p"
+                      variant="bodySm"
+                      tone="success"
+                      fontWeight="bold"
+                    >
+                      Save 10+ hours/week with Automated Routing & turn
+                      abandoned carts into recovered revenue.
+                    </Text>
+                  </BlockStack>
                   <Divider />
                   <BlockStack gap="200">
-                    <FeatureItem text="Everything in Basic" />
-                    <FeatureItem text="Local Delivery Optimizer" />
-                    <FeatureItem text="Live Social Proof Widgets" />
-                    <FeatureItem text="Verified Revenue Insights" />
+                    <FeatureItem text="Everything in Basic" bold />
+                    <FeatureItem text="Neighborhood Delivery Optimizer" bold />
+                    <FeatureItem text="Live Social Proof (Fire Bubbles)" bold />
+                    <FeatureItem text="Automated Order Recovery" />
+                    <FeatureItem text="Priority 24/7 Chat Support" />
                   </BlockStack>
                 </BlockStack>
               </Box>
-              <Form method="post">
-                <input type="hidden" name="plan" value={MONTHLY_PLAN_PRO} />
-                <Button
-                  submit
-                  variant="primary"
-                  loading={isSubmitting}
-                  fullWidth
-                  size="large"
-                >
-                  Start 7-Day Free Trial
-                </Button>
-              </Form>
+              <Box paddingBlockStart="400">
+                <Form method="post">
+                  <input type="hidden" name="plan" value={MONTHLY_PLAN_PRO} />
+                  <Button
+                    submit
+                    variant="primary"
+                    loading={isSubmitting}
+                    fullWidth
+                    size="large"
+                  >
+                    Start Pro Free Trial
+                  </Button>
+                </Form>
+              </Box>
             </Card>
           </Layout.Section>
         </Layout>
 
-        {/* COMPARISON TABLE SECTION */}
         <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
+          <Card padding="0">
+            <Box padding="400">
               <Text as="h2" variant="headingMd">
-                Plan Comparison
+                Feature Comparison
               </Text>
-              <IndexTable
-                resourceName={{ singular: "feature", plural: "features" }}
-                itemCount={4}
-                headings={[
-                  { title: "Feature" },
-                  { title: "Basic", alignment: "center" }, // Added alignment
-                  { title: "Pro", alignment: "center" }, // Added alignment
-                ]}
-                selectable={false}
-              >
-                {[
-                  { id: "1", name: "Personalization", basic: true, pro: true },
-                  {
-                    id: "2",
-                    name: "Delivery Optimization",
-                    basic: false,
-                    pro: true,
-                  },
-                  {
-                    id: "3",
-                    name: "Social Proof Widgets",
-                    basic: false,
-                    pro: true,
-                  },
-                  {
-                    id: "4",
-                    name: "Revenue Insights",
-                    basic: false,
-                    pro: true,
-                  },
-                ].map((row, index) => (
-                  <IndexTable.Row id={row.id} key={row.id} position={index}>
-                    <IndexTable.Cell>
-                      <Text fontWeight="bold" as="span">
-                        {row.name}
-                      </Text>
-                    </IndexTable.Cell>
-
-                    {/* Centered Basic Column */}
-                    <IndexTable.Cell>
-                      <div
-                        style={{ display: "flex", justifyContent: "center" }}
-                      >
-                        {row.basic ? (
-                          <Icon source={CheckCircleIcon} tone="success" />
-                        ) : (
-                          <Text tone="subdued" as="span">
-                            —
-                          </Text>
-                        )}
-                      </div>
-                    </IndexTable.Cell>
-
-                    {/* Centered Pro Column */}
-                    <IndexTable.Cell>
-                      <div
-                        style={{ display: "flex", justifyContent: "center" }}
-                      >
-                        {row.pro ? (
-                          <Icon source={CheckCircleIcon} tone="success" />
-                        ) : (
-                          <Text tone="subdued" as="span">
-                            —
-                          </Text>
-                        )}
-                      </div>
-                    </IndexTable.Cell>
-                  </IndexTable.Row>
-                ))}
-              </IndexTable>
-            </BlockStack>
+            </Box>
+            <IndexTable
+              resourceName={{ singular: "feature", plural: "features" }}
+              itemCount={5}
+              headings={[
+                { title: "Power Features" },
+                { title: "Basic", alignment: "center" },
+                { title: "Pro", alignment: "center" },
+              ]}
+              selectable={false}
+            >
+              {[
+                {
+                  id: "1",
+                  name: "Product Personalization",
+                  basic: true,
+                  pro: true,
+                },
+                {
+                  id: "2",
+                  name: "Delivery Optimizer (KM/Miles)",
+                  basic: false,
+                  pro: true,
+                },
+                {
+                  id: "3",
+                  name: "Social Proof Widgets",
+                  basic: false,
+                  pro: true,
+                },
+                {
+                  id: "4",
+                  name: "Revenue Performance Tracking",
+                  basic: false,
+                  pro: true,
+                },
+                {
+                  id: "5",
+                  name: "Order Recovery System",
+                  basic: false,
+                  pro: true,
+                },
+              ].map((row, index) => (
+                <IndexTable.Row id={row.id} key={row.id} position={index}>
+                  <IndexTable.Cell>
+                    <Text fontWeight="bold" as="span">
+                      {row.name}
+                    </Text>
+                  </IndexTable.Cell>
+                  <IndexTable.Cell>
+                    <div style={{ display: "flex", justifyContent: "center" }}>
+                      {row.basic ? (
+                        <Icon source={CheckCircleIcon} tone="success" />
+                      ) : (
+                        <Text as="span" tone="subdued">
+                          —
+                        </Text>
+                      )}
+                    </div>
+                  </IndexTable.Cell>
+                  <IndexTable.Cell>
+                    <div style={{ display: "flex", justifyContent: "center" }}>
+                      <Icon source={CheckCircleIcon} tone="success" />
+                    </div>
+                  </IndexTable.Cell>
+                </IndexTable.Row>
+              ))}
+            </IndexTable>
           </Card>
         </Layout.Section>
+
+        <Box paddingBlockEnd="800">
+          <InlineStack align="center" gap="200">
+            <Icon source={CashDollarIcon} tone="base" />
+            <Text as="span" tone="subdued" variant="bodySm">
+              Secure payments processed via Shopify Billing API.
+            </Text>
+          </InlineStack>
+        </Box>
       </BlockStack>
     </Page>
   );

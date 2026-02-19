@@ -41,6 +41,7 @@ model AppSettings {
   
   // Pro Tier: Delivery & Recovery
   deliveryRadius  Float    @default(10.0)
+  hasCustomizedRadius Boolean @default(false)
   recoveryEnabled Boolean  @default(false)
   isEnabled       Boolean  @default(true) 
   
@@ -63,4 +64,42 @@ model Conversion {
 
   @@index([shop])
 }
+
+model DeliveryCheck {
+  id              String   @id @default(cuid())
+  shopDomain      String
+  customerAddress String
+  distance        Float
+  inRadius        Boolean
+  timestamp       DateTime @default(now())
+  
+  @@index([shopDomain, timestamp])
+}
+
+model ConversionEvent {
+  id          String   @id @default(cuid())
+  shopDomain  String
+  orderId     String   @unique
+  orderValue  Float
+  source      String   // "delivery_badge", "cart_recovery", etc.
+  createdAt   DateTime @default(now())
+  
+  @@index([shopDomain, createdAt])
+}
+
+model CartRecovery {
+  id              String   @id @default(cuid())
+  shopDomain      String
+  cartToken       String
+  customerEmail   String?
+  customerAddress String?
+  inDeliveryZone  Boolean
+  emailSent       Boolean  @default(false)
+  recovered       Boolean  @default(false)
+  recoveryValue   Float?
+  createdAt       DateTime @default(now())
+  
+  @@index([shopDomain, emailSent, recovered])
+}
+
 

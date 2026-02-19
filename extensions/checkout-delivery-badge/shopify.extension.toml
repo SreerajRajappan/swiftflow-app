@@ -1,0 +1,10 @@
+api_version = "2024-10"
+
+[[extensions]]
+type = "ui_extension"
+name = "delivery-badge"
+handle = "delivery-badge"
+
+[[extensions.targeting]]
+module = "purchase.checkout.block.render"
+target = "purchase.checkout.block.render"

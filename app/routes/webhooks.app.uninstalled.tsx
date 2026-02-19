@@ -1,17 +1,26 @@
+import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, session, topic } = await authenticate.webhook(request);
+export async function action({ request }: ActionFunctionArgs) {
+  const { topic, shop } = await authenticate.webhook(request);
 
-  console.log(`Received ${topic} webhook for ${shop}`);
-
-  // Webhook requests can trigger multiple times and after an app has already been uninstalled.
-  // If this webhook already ran, the session may have been deleted previously.
-  if (session) {
-    await db.session.deleteMany({ where: { shop } });
+  if (topic !== "APP_UNINSTALLED") {
+    return json({ error: "Invalid topic" }, { status: 400 });
   }
 
-  return new Response();
-};
+  try {
+    // Clean up all data for this shop
+    await db.appSettings.deleteMany({ where: { shopDomain: shop } });
+    await db.deliveryCheck.deleteMany({ where: { shopDomain: shop } });
+    await db.conversionEvent.deleteMany({ where: { shopDomain: shop } });
+    await db.cartRecovery.deleteMany({ where: { shopDomain: shop } });
+
+    console.log(`Cleaned up data for uninstalled shop: ${shop}`);
+    return json({ success: true });
+  } catch (error) {
+    console.error("Uninstall webhook error:", error);
+    return json({ error: "Cleanup failed" }, { status: 500 });
+  }
+}

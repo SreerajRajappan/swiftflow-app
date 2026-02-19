@@ -53,8 +53,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const shopResponse = await admin.graphql(
     `#graphql
   query getShopLocation {
-    locations(first: 1) {
+    locations(first: 10) { 
       nodes {
+        name
         address {
           countryCode
         }
@@ -63,10 +64,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }`,
   );
   const shopJson = await shopResponse.json();
-  const countryCode =
-    shopJson.data?.locations?.nodes[0]?.address?.countryCode || "US";
+  const locationNodes = shopJson.data?.locations?.nodes || [];
+  const primaryLocation =
+    locationNodes.find((node: any) => node.name === "Shop location") ||
+    locationNodes[0];
 
-  // US, Myanmar, and Liberia use Imperial
+  const countryCode = primaryLocation?.address?.countryCode;
   const unit = ["US", "MM", "LR"].includes(countryCode) ? "miles" : "km";
 
   const billingCheck = await billing.check({
@@ -79,7 +82,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   );
   const isPro = subscription?.name === MONTHLY_PLAN_PRO;
 
-  // 3. Database Aggregations
   const settings = await prisma.appSettings.findUnique({ where: { shop } });
   const totalViews = await prisma.productView.count({ where: { shop } });
 
@@ -123,7 +125,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           { variables: { id: item.productId } },
         );
         const responseJson = await response.json();
-        const product = responseJson.data?.product; // Correctly accessing data
+        const product = responseJson.data?.product;
 
         const salesForProduct = await prisma.conversion.aggregate({
           where: { productId: item.productId },
@@ -141,7 +143,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }),
   );
 
-  // 5. Trial Calculation Logic
   let trialDaysLeft = 0;
   if (subscription && subscription.trialDays) {
     const createdAt = new Date(subscription.createdAt);
@@ -152,7 +153,33 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     trialDaysLeft = Math.max(0, trialLength - daysPassed);
   }
 
-  // 6. Return All Data
+  const response = await admin.graphql(
+    `#graphql
+    query getActiveFulfillmentLocation {
+      locations(first: 10, query: "ships_inventory:true") {
+        nodes {
+          name
+          shipsInventory
+          address {
+            latitude
+            longitude
+          }
+        }
+      }
+    }
+  `,
+  );
+
+  const data = await response.json();
+  const locations = data.data.locations.nodes;
+
+  // Manually find the first node where shipsInventory is true
+  const activeHub = locations.find((node: any) => node.shipsInventory === true);
+  console.log("activeHub: ", activeHub);
+
+  const lat = activeHub?.address?.latitude ?? 34.0549;
+  const lng = activeHub?.address?.longitude ?? -118.2437;
+
   return {
     shop,
     settings,
@@ -165,7 +192,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     trendingProducts: enrichedProducts,
     isPro,
     trialDaysLeft,
-    unit, // Added unit to return payload
+    unit,
+    googleMapsApiKey: process.env.SHOPIFY_GOOGLE_MAPS_KEY,
+    googleMapId: process.env.SHOPIFY_MAP_ID,
+    shopCoordinates: { lat, lng },
   };
 };
 
@@ -180,13 +210,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { success: true, message: "Data reset successfully" };
   }
 
+  // 1. Extract values correctly from FormData
   const customText = formData.get("customText") as string;
   const customColor = formData.get("customColor") as string;
   const isEnabled = formData.get("isEnabled") === "true";
-
-  // Convert the fontSize from the form string to a Number
   const fontSize = Number(formData.get("fontSize")) || 16;
+  const deliveryRadius = parseFloat(formData.get("deliveryRadius") as string);
+  const recoveryEnabled = formData.get("recoveryEnabled") === "true";
 
+  // 2. Perform Upsert with newly defined variables
   await prisma.appSettings.upsert({
     where: { shop },
     update: {
@@ -194,6 +226,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       customColor,
       isEnabled,
       fontSize,
+      deliveryRadius,
+      recoveryEnabled,
+      hasCustomizedRadius: true,
     },
     create: {
       shop,
@@ -201,6 +236,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       customColor,
       isEnabled,
       fontSize,
+      deliveryRadius,
+      recoveryEnabled,
+      hasCustomizedRadius: true,
     },
   });
 
@@ -222,6 +260,9 @@ export default function Index() {
     goalProgress,
     recentConversions,
     unit,
+    googleMapsApiKey,
+    googleMapId,
+    shopCoordinates,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
@@ -231,9 +272,13 @@ export default function Index() {
   // Tab State
   const [selectedTab, setSelectedTab] = useState(0);
   const [fontSize, setFontSize] = useState(settings?.fontSize || 16);
-  const [deliveryRadius, setDeliveryRadius] = useState(
-    settings?.deliveryRadius || 10,
-  );
+  const [deliveryRadius, setDeliveryRadius] = useState(() => {
+    if (settings?.hasCustomizedRadius) {
+      return Number(settings.deliveryRadius);
+    }
+
+    return unit === "miles" ? 6 : 10;
+  });
   const [recoveryEnabled, setRecoveryEnabled] = useState(
     settings?.recoveryEnabled || false,
   );
@@ -331,13 +376,20 @@ export default function Index() {
             )}
             {selectedTab === 1 && (
               <DeliveryTab
+                isPro={isPro}
                 deliveryRadius={deliveryRadius}
                 setDeliveryRadius={setDeliveryRadius}
                 recoveryEnabled={recoveryEnabled}
                 setRecoveryEnabled={setRecoveryEnabled}
                 isSaving={isSaving}
-                unit={unit}
+                unit={unit as "miles" | "km"}
                 handleSave={handleSave}
+                navigate={navigate}
+                googleMapsApiKey={googleMapsApiKey ?? ""}
+                googleMapId={googleMapId ?? ""}
+                shopCoordinates={
+                  shopCoordinates as { lat: number; lng: number }
+                }
               />
             )}
             {selectedTab === 2 && (
