@@ -23,7 +23,7 @@ export async function action({ request }: ActionFunctionArgs) {
       // Attribute this order to SwiftFlow
       await db.conversionEvent.create({
         data: {
-          shopDomain: shop,
+          shop,
           orderId: order.id.toString(),
           orderValue: parseFloat(order.total_price || "0"),
           source: "delivery_badge",
@@ -37,7 +37,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const cartRecovery = await db.cartRecovery.findFirst({
         where: {
           cartToken,
-          shopDomain: shop,
+          shop,
           emailSent: true,
           recovered: false,
         },
@@ -55,7 +55,7 @@ export async function action({ request }: ActionFunctionArgs) {
         // Also create conversion event
         await db.conversionEvent.create({
           data: {
-            shopDomain: shop,
+            shop,
             orderId: order.id.toString(),
             orderValue: parseFloat(order.total_price || "0"),
             source: "cart_recovery",

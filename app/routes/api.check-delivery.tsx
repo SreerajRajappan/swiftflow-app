@@ -14,7 +14,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   try {
     // Get shop settings
     const settings = await db.appSettings.findFirst({
-      where: { shopDomain: shop },
+      where: { shop: shop },
     });
 
     if (!settings) {
@@ -69,7 +69,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     // Log this check for analytics
     await db.deliveryCheck.create({
       data: {
-        shopDomain: shop,
+        shop: shop,
         customerAddress: address,
         distance,
         inRadius,
@@ -89,17 +89,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     );
   } catch (error) {
     console.error("Delivery check error:", error);
-    return json(
-      { error: "Server error" },
-      { status: 500 },
-      {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
-        },
-      },
-    );
+    return json({ error: "Server error" }, { status: 500 });
   }
 }
 

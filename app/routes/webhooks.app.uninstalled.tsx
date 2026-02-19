@@ -12,10 +12,10 @@ export async function action({ request }: ActionFunctionArgs) {
 
   try {
     // Clean up all data for this shop
-    await db.appSettings.deleteMany({ where: { shopDomain: shop } });
-    await db.deliveryCheck.deleteMany({ where: { shopDomain: shop } });
-    await db.conversionEvent.deleteMany({ where: { shopDomain: shop } });
-    await db.cartRecovery.deleteMany({ where: { shopDomain: shop } });
+    await db.appSettings.deleteMany({ where: { shop } });
+    await db.deliveryCheck.deleteMany({ where: { shop } });
+    await db.conversionEvent.deleteMany({ where: { shop } });
+    await db.cartRecovery.deleteMany({ where: { shop } });
 
     console.log(`Cleaned up data for uninstalled shop: ${shop}`);
     return json({ success: true });

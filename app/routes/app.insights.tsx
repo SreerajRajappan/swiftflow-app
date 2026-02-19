@@ -8,8 +8,6 @@ import {
   BlockStack,
   Text,
   InlineGrid,
-  Box,
-  Badge,
   DataTable,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
@@ -22,12 +20,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Get date ranges
   const now = new Date();
   const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   // Total revenue attributed to SwiftFlow
   const totalRevenue = await db.conversionEvent.aggregate({
     where: {
-      shopDomain: shop,
+      shop, // Fixed from shopDomain
       createdAt: { gte: last30Days },
     },
     _sum: { orderValue: true },
@@ -38,7 +35,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const deliveryStats = await db.deliveryCheck.groupBy({
     by: ["inRadius"],
     where: {
-      shopDomain: shop,
+      shop, // Fixed from shopDomain
       timestamp: { gte: last30Days },
     },
     _count: true,
@@ -52,7 +49,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Cart recovery stats
   const recoveryStats = await db.cartRecovery.aggregate({
     where: {
-      shopDomain: shop,
+      shop, // Fixed from shopDomain
       recovered: true,
       createdAt: { gte: last30Days },
     },
@@ -62,7 +59,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
   // Recent conversions
   const recentConversions = await db.conversionEvent.findMany({
-    where: { shopDomain: shop },
+    where: { shop }, // Fixed from shopDomain
     orderBy: { createdAt: "desc" },
     take: 10,
   });

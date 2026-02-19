@@ -31,21 +31,22 @@ model Session {
 }
 
 model AppSettings {
-  id              String   @id @default(uuid())
-  shop            String   @unique
+  id                  String   @id @default(uuid())
+  shop                String   @unique
+  customText          String   @default("Your Name Here")
+  customColor         String   @default("#5c6ac4")
+  fontSize            Int      @default(16)
+  deliveryRadius      Float    @default(10.0)
+  hasCustomizedRadius Boolean  @default(false)
+  recoveryEnabled     Boolean  @default(false)
+  isEnabled           Boolean  @default(true) 
   
-  // Basic Tier: Personalizer
-  customText      String   @default("Your Name Here")
-  customColor     String   @default("#5c6ac4")
-  fontSize        Int      @default(16)
+  // NEW FIELDS REQUIRED FOR THE DELIVERY API
+  storeLat            Float?
+  storeLng            Float?
+  unitSystem          String   @default("IMPERIAL")
   
-  // Pro Tier: Delivery & Recovery
-  deliveryRadius  Float    @default(10.0)
-  hasCustomizedRadius Boolean @default(false)
-  recoveryEnabled Boolean  @default(false)
-  isEnabled       Boolean  @default(true) 
-  
-  updatedAt       DateTime @updatedAt
+  updatedAt           DateTime @updatedAt
 }
 
 model ProductView {
@@ -59,38 +60,35 @@ model Conversion {
   id          Int      @id @default(autoincrement())
   shop        String
   productId   String
-  amount      Float    // The order subtotal
+  amount      Float
   createdAt   DateTime @default(now())
-
   @@index([shop])
 }
 
 model DeliveryCheck {
   id              String   @id @default(cuid())
-  shopDomain      String
+  shop            String   
   customerAddress String
   distance        Float
   inRadius        Boolean
   timestamp       DateTime @default(now())
-  
-  @@index([shopDomain, timestamp])
+  @@index([shop, timestamp])
 }
 
 model ConversionEvent {
   id          String   @id @default(cuid())
-  shopDomain  String
+  shop        String   
   orderId     String   @unique
   orderValue  Float
-  source      String   // "delivery_badge", "cart_recovery", etc.
+  source      String   
   createdAt   DateTime @default(now())
-  
-  @@index([shopDomain, createdAt])
+  @@index([shop, createdAt])
 }
 
 model CartRecovery {
   id              String   @id @default(cuid())
-  shopDomain      String
-  cartToken       String
+  shop            String   
+  cartToken       String   @unique
   customerEmail   String?
   customerAddress String?
   inDeliveryZone  Boolean
@@ -98,8 +96,5 @@ model CartRecovery {
   recovered       Boolean  @default(false)
   recoveryValue   Float?
   createdAt       DateTime @default(now())
-  
-  @@index([shopDomain, emailSent, recovered])
+  @@index([shop, emailSent, recovered])
 }
-
-
