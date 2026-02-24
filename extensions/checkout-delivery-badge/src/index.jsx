@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   reactExtension,
   Banner,
@@ -20,37 +20,53 @@ function DeliveryBadge() {
 
   useEffect(() => {
     async function checkDelivery() {
-      // Only check if we have cart items
       if (!cartLines || cartLines.length === 0) {
         setStatus("hidden");
         return;
       }
 
       try {
-        // Get shop domain and make API call
         const shopDomain = shop.myshopifyDomain;
-        const response = await fetch(
-          `https://${shopDomain}/apps/swiftflow/api/delivery-check`,
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
+
+        // Try to get user's location
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              const { latitude, longitude } = position.coords;
+
+              // Call the correct API endpoint
+              const response = await fetch(
+                `https://${shopDomain}/apps/api/delivery-check?shop=${shopDomain}&lat=${latitude}&lng=${longitude}`,
+                {
+                  method: "GET",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                },
+              );
+
+              const data = await response.json();
+
+              if (data.inRadius) {
+                setStatus("success");
+                setMessage(
+                  data.message || "Great news! We deliver to your area.",
+                );
+
+                await applyAttributeChange({
+                  type: "updateAttribute",
+                  key: "_swiftflow_delivery",
+                  value: "true",
+                });
+              } else {
+                setStatus("hidden");
+              }
             },
-          },
-        );
-
-        const data = await response.json();
-
-        if (data.inRadius) {
-          setStatus("success");
-          setMessage(data.message || "Great news! We deliver to your area.");
-
-          // Mark this cart for tracking
-          await applyAttributeChange({
-            type: "updateAttribute",
-            key: "_swiftflow_delivery",
-            value: "true",
-          });
+            (error) => {
+              console.error("Geolocation error:", error);
+              setStatus("hidden");
+            },
+          );
         } else {
           setStatus("hidden");
         }
