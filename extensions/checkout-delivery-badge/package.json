@@ -2,9 +2,16 @@
   "name": "delivery-badge",
   "private": true,
   "version": "1.0.0",
-  "dependencies": {
-    "@shopify/ui-extensions-react": "2025.1.x",
-    "react": "^18.2.0"
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
   },
-  "devDependencies": {}
+  "dependencies": {
+    "react": "^18.2.0",
+    "@shopify/ui-extensions-react": "^2024.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.0.0"
+  }
 }

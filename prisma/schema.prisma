@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,90 +8,103 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
-  refreshToken  String?
-  refreshTokenExpires DateTime?
+  id          String    @id
+  shop        String
+  state       String
+  isOnline    Boolean   @default(false)
+  scope       String?
+  expires     DateTime?
+  accessToken String
+  userId      BigInt?
+  firstName   String?
+  lastName    String?
+  email       String?
+  accountOwner Boolean  @default(false)
+  locale      String?
+  collaborator Boolean? @default(false)
+  emailVerified Boolean? @default(false)
 }
 
 model AppSettings {
-  id                  String   @id @default(uuid())
-  shop                String   @unique
-  customText          String   @default("Your Name Here")
-  customColor         String   @default("#5c6ac4")
-  fontSize            Int      @default(16)
-  deliveryRadius      Float    @default(10.0)
-  hasCustomizedRadius Boolean  @default(false)
-  recoveryEnabled     Boolean  @default(false)
-  isEnabled           Boolean  @default(true) 
+  id                   String   @id @default(cuid())
+  shopDomain           String   @unique
+  deliveryRadius       Float    @default(6.0)
+  unitSystem           String   @default("IMPERIAL")
+  hasCustomizedRadius  Boolean  @default(false)
+  storeLat             Float?
+  storeLng             Float?
+  storeAddress         String?
+  revenueSuiteEnabled  Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
   
-  // NEW FIELDS REQUIRED FOR THE DELIVERY API
-  storeLat            Float?
-  storeLng            Float?
-  unitSystem          String   @default("IMPERIAL")
+  // Personalizer settings
+  headerText           String   @default("Local Delivery Available")
+  headerColor          String   @default("#008060")
+  fontSize             String   @default("16")
+  buttonText           String   @default("Check Availability")
   
-  updatedAt           DateTime @updatedAt
-}
-
-model ProductView {
-  id        Int      @id @default(autoincrement())
-  shop      String
-  productId String
-  createdAt DateTime @default(now())
-}
-
-model Conversion {
-  id          Int      @id @default(autoincrement())
-  shop        String
-  productId   String
-  amount      Float
-  createdAt   DateTime @default(now())
-  @@index([shop])
+  @@index([shopDomain])
 }
 
 model DeliveryCheck {
   id              String   @id @default(cuid())
-  shop            String   
-  customerAddress String
-  distance        Float
+  shopDomain      String
+  customerAddress String?
+  customerLat     Float?
+  customerLng     Float?
+  distance        Float?
   inRadius        Boolean
+  cartToken       String?
   timestamp       DateTime @default(now())
-  @@index([shop, timestamp])
+  
+  @@index([shopDomain, timestamp])
+  @@index([cartToken])
 }
 
 model ConversionEvent {
   id          String   @id @default(cuid())
-  shop        String   
+  shopDomain  String
   orderId     String   @unique
   orderValue  Float
-  source      String   
+  source      String   // "delivery_badge", "cart_recovery", "manual"
+  cartToken   String?
   createdAt   DateTime @default(now())
-  @@index([shop, createdAt])
+  
+  @@index([shopDomain, createdAt])
+  @@index([cartToken])
 }
 
 model CartRecovery {
   id              String   @id @default(cuid())
-  shop            String   
+  shopDomain      String
   cartToken       String   @unique
   customerEmail   String?
   customerAddress String?
+  customerLat     Float?
+  customerLng     Float?
   inDeliveryZone  Boolean
   emailSent       Boolean  @default(false)
+  emailSentAt     DateTime?
   recovered       Boolean  @default(false)
+  recoveredAt     DateTime?
   recoveryValue   Float?
+  cartValue       Float?
   createdAt       DateTime @default(now())
-  @@index([shop, emailSent, recovered])
+  updatedAt       DateTime @updatedAt
+  
+  @@index([shopDomain, emailSent, recovered])
+  @@index([cartToken])
+}
+
+model ProductView {
+  id          String   @id @default(cuid())
+  shopDomain  String
+  productId   String
+  productTitle String
+  viewCount   Int      @default(1)
+  lastViewed  DateTime @default(now())
+  
+  @@unique([shopDomain, productId])
+  @@index([shopDomain, lastViewed])
 }

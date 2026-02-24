@@ -4,50 +4,45 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { topic, shop, payload } = await authenticate.webhook(request);
-
-  if (topic !== "ORDERS_CREATE") {
-    return json({ error: "Invalid topic" }, { status: 400 });
-  }
-
   try {
-    const order = payload;
+    const { topic, shop, payload } = await authenticate.webhook(request);
 
-    // Check if order has SwiftFlow attribution
-    const hasSwiftFlowAttr = order.note_attributes?.some(
-      (attr: any) =>
-        attr.name === "_swiftflow_in_delivery_zone" && attr.value === "true",
+    if (!payload || !shop) {
+      return json({ error: "Invalid webhook payload" }, { status: 400 });
+    }
+
+    const order = payload as any;
+
+    // Check for SwiftFlow attribution
+    const swiftflowAttr = order.note_attributes?.find(
+      (attr: any) => attr.name === "_swiftflow_delivery",
     );
 
-    if (hasSwiftFlowAttr) {
-      // Attribute this order to SwiftFlow
+    if (swiftflowAttr?.value === "true") {
+      // Create conversion event
       await db.conversionEvent.create({
         data: {
           shop,
           orderId: order.id.toString(),
           orderValue: parseFloat(order.total_price || "0"),
           source: "delivery_badge",
+          cartToken: order.cart_token,
         },
       });
     }
 
-    // Check if this recovers a cart
-    const cartToken = order.cart_token;
-    if (cartToken) {
-      const cartRecovery = await db.cartRecovery.findFirst({
-        where: {
-          cartToken,
-          shop,
-          emailSent: true,
-          recovered: false,
-        },
+    // Check for cart recovery
+    if (order.cart_token) {
+      const cartRecovery = await db.cartRecovery.findUnique({
+        where: { cartToken: order.cart_token },
       });
 
-      if (cartRecovery) {
+      if (cartRecovery && cartRecovery.emailSent && !cartRecovery.recovered) {
         await db.cartRecovery.update({
           where: { id: cartRecovery.id },
           data: {
             recovered: true,
+            recoveredAt: new Date(),
             recoveryValue: parseFloat(order.total_price || "0"),
           },
         });
@@ -59,6 +54,7 @@ export async function action({ request }: ActionFunctionArgs) {
             orderId: order.id.toString(),
             orderValue: parseFloat(order.total_price || "0"),
             source: "cart_recovery",
+            cartToken: order.cart_token,
           },
         });
       }

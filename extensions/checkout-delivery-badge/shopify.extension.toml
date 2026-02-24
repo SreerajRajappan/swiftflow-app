@@ -1,14 +1,16 @@
-api_version = "2025-10"
+api_version = "2024-10"
 
 [[extensions]]
-uid = "41aa1da7-3906-7505-5949-a17ef011344dd3da1fb3"
 type = "ui_extension"
 name = "delivery-badge"
 handle = "delivery-badge"
 
+[extensions.settings]
+[[extensions.settings.fields]]
+key = "enabled"
+type = "boolean"
+name = "Enable delivery badge"
+description = "Show delivery availability message to customers"
+
 [[extensions.targeting]]
 target = "purchase.checkout.block.render"
-module = "./src/index.jsx"
-
-[build]
-external = ["react", "react-dom", "@shopify/ui-extensions-react", "@shopify/ui-extensions"]

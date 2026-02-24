@@ -19,6 +19,10 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   webhooks: {
+    APP_UNINSTALLED: {
+      deliveryMethod: DeliveryMethod.Http,
+      callbackUrl: "/webhooks/app/uninstalled",
+    },
     ORDERS_CREATE: {
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/orders/create",
@@ -26,10 +30,6 @@ const shopify = shopifyApp({
     CARTS_UPDATE: {
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/carts/update",
-    },
-    APP_UNINSTALLED: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/app/uninstalled",
     },
   },
   distribution: AppDistribution.AppStore,
@@ -49,7 +49,7 @@ const shopify = shopifyApp({
     },
     PRO: {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
-      trialDays: 7, // 👈 7-day trial added at the top level for this API version
+      trialDays: 7,
       lineItems: [
         {
           amount: 29.99,

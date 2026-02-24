@@ -9,6 +9,8 @@ import {
   Text,
   InlineGrid,
   DataTable,
+  Badge,
+  EmptyState,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
@@ -17,62 +19,59 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  // Get date ranges
   const now = new Date();
   const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  // Total revenue attributed to SwiftFlow
-  const totalRevenue = await db.conversionEvent.aggregate({
+  // Get conversion events
+  const conversions = await db.conversionEvent.findMany({
     where: {
-      shop, // Fixed from shopDomain
+      shop,
       createdAt: { gte: last30Days },
     },
-    _sum: { orderValue: true },
-    _count: true,
-  });
-
-  // Delivery checks
-  const deliveryStats = await db.deliveryCheck.groupBy({
-    by: ["inRadius"],
-    where: {
-      shop, // Fixed from shopDomain
-      timestamp: { gte: last30Days },
-    },
-    _count: true,
-  });
-
-  const inRadiusCount = deliveryStats.find((s) => s.inRadius)?._count || 0;
-  const totalChecks = deliveryStats.reduce((sum, s) => sum + s._count, 0);
-  const conversionRate =
-    totalChecks > 0 ? (inRadiusCount / totalChecks) * 100 : 0;
-
-  // Cart recovery stats
-  const recoveryStats = await db.cartRecovery.aggregate({
-    where: {
-      shop, // Fixed from shopDomain
-      recovered: true,
-      createdAt: { gte: last30Days },
-    },
-    _sum: { recoveryValue: true },
-    _count: true,
-  });
-
-  // Recent conversions
-  const recentConversions = await db.conversionEvent.findMany({
-    where: { shop }, // Fixed from shopDomain
     orderBy: { createdAt: "desc" },
     take: 10,
   });
 
+  const totalRevenue = conversions.reduce(
+    (sum, conv) => sum + conv.orderValue,
+    0,
+  );
+  const totalOrders = conversions.length;
+
+  // Get delivery checks
+  const deliveryChecks = await db.deliveryCheck.findMany({
+    where: {
+      shop,
+      timestamp: { gte: last30Days },
+    },
+  });
+
+  const inRadiusCount = deliveryChecks.filter((c) => c.inRadius).length;
+  const totalChecks = deliveryChecks.length;
+
+  // Get cart recovery stats
+  const recoveredCarts = await db.cartRecovery.findMany({
+    where: {
+      shop,
+      recovered: true,
+      recoveredAt: { gte: last30Days },
+    },
+  });
+
+  const recoveredRevenue = recoveredCarts.reduce(
+    (sum, cart) => sum + (cart.recoveryValue || 0),
+    0,
+  );
+
   return json({
-    totalRevenue: totalRevenue._sum.orderValue || 0,
-    totalOrders: totalRevenue._count || 0,
+    totalRevenue,
+    totalOrders,
     inRadiusCount,
     totalChecks,
-    conversionRate,
-    recoveredCarts: recoveryStats._count || 0,
-    recoveredRevenue: recoveryStats._sum.recoveryValue || 0,
-    recentConversions,
+    conversionRate: totalChecks > 0 ? (inRadiusCount / totalChecks) * 100 : 0,
+    recoveredCarts: recoveredCarts.length,
+    recoveredRevenue,
+    recentConversions: conversions,
   });
 }
 
@@ -82,7 +81,12 @@ export default function Insights() {
   const tableRows = data.recentConversions.map((conv) => [
     conv.orderId,
     `$${conv.orderValue.toFixed(2)}`,
-    conv.source,
+    <Badge
+      key={conv.id}
+      tone={conv.source === "delivery_badge" ? "success" : "info"}
+    >
+      {conv.source.replace("_", " ")}
+    </Badge>,
     new Date(conv.createdAt).toLocaleDateString(),
   ]);
 
@@ -96,11 +100,11 @@ export default function Insights() {
                 <Text as="h3" variant="headingMd">
                   Revenue Attributed
                 </Text>
-                <Text as="p" variant="heading2xl">
+                <Text as="p" variant="heading2xl" fontWeight="bold">
                   ${data.totalRevenue.toFixed(2)}
                 </Text>
                 <Text as="p" tone="subdued">
-                  Last 30 days • {data.totalOrders} orders
+                  {data.totalOrders} orders in last 30 days
                 </Text>
               </BlockStack>
             </Card>
@@ -110,7 +114,7 @@ export default function Insights() {
                 <Text as="h3" variant="headingMd">
                   Delivery Zone Coverage
                 </Text>
-                <Text as="p" variant="heading2xl">
+                <Text as="p" variant="heading2xl" fontWeight="bold">
                   {data.conversionRate.toFixed(1)}%
                 </Text>
                 <Text as="p" tone="subdued">
@@ -124,7 +128,7 @@ export default function Insights() {
                 <Text as="h3" variant="headingMd">
                   Cart Recovery
                 </Text>
-                <Text as="p" variant="heading2xl">
+                <Text as="p" variant="heading2xl" fontWeight="bold">
                   ${data.recoveredRevenue.toFixed(2)}
                 </Text>
                 <Text as="p" tone="subdued">
@@ -141,11 +145,23 @@ export default function Insights() {
               <Text as="h3" variant="headingMd">
                 Recent Conversions
               </Text>
-              <DataTable
-                columnContentTypes={["text", "numeric", "text", "text"]}
-                headings={["Order ID", "Value", "Source", "Date"]}
-                rows={tableRows}
-              />
+              {tableRows.length > 0 ? (
+                <DataTable
+                  columnContentTypes={["text", "numeric", "text", "text"]}
+                  headings={["Order ID", "Value", "Source", "Date"]}
+                  rows={tableRows}
+                />
+              ) : (
+                <EmptyState
+                  heading="No conversions yet"
+                  image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+                >
+                  <p>
+                    Your revenue data will appear here once customers start
+                    converting.
+                  </p>
+                </EmptyState>
+              )}
             </BlockStack>
           </Card>
         </Layout.Section>

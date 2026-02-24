@@ -3,8 +3,8 @@ import {
   reactExtension,
   Banner,
   useApi,
+  useCartLines,
   useApplyAttributeChange,
-  useShippingAddress,
 } from "@shopify/ui-extensions-react/checkout";
 
 export default reactExtension("purchase.checkout.block.render", () => (
@@ -12,51 +12,60 @@ export default reactExtension("purchase.checkout.block.render", () => (
 ));
 
 function DeliveryBadge() {
-  const { shop } = useApi();
-  const [deliveryAvailable, setDeliveryAvailable] = useState(null);
-  const [loading, setLoading] = useState(true);
-
+  const { shop, extensionPoint } = useApi();
+  const cartLines = useCartLines();
   const applyAttributeChange = useApplyAttributeChange();
-  const shippingAddress = useShippingAddress();
+  const [status, setStatus] = useState("loading");
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    if (!shippingAddress?.address1) {
-      setLoading(false);
-      return;
-    }
+    async function checkDelivery() {
+      // Only check if we have cart items
+      if (!cartLines || cartLines.length === 0) {
+        setStatus("hidden");
+        return;
+      }
 
-    // ⚠️ NOTE: Replace 'your-app-url.com' with your actual production or tunnel URL
-    const url = `https://your-app-url.com/api/check-delivery?shop=${shop.myshopifyDomain}&address=${encodeURIComponent(
-      `${shippingAddress.address1}, ${shippingAddress.city}, ${shippingAddress.zip}`,
-    )}`;
+      try {
+        // Get shop domain and make API call
+        const shopDomain = shop.myshopifyDomain;
+        const response = await fetch(
+          `https://${shopDomain}/apps/swiftflow/api/delivery-check`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        );
 
-    fetch(url)
-      .then((response) => response.json())
-      .then((data) => {
-        setDeliveryAvailable(data.inRadius);
+        const data = await response.json();
+
         if (data.inRadius) {
-          applyAttributeChange({
+          setStatus("success");
+          setMessage(data.message || "Great news! We deliver to your area.");
+
+          // Mark this cart for tracking
+          await applyAttributeChange({
             type: "updateAttribute",
-            key: "_swiftflow_in_delivery_zone",
+            key: "_swiftflow_delivery",
             value: "true",
           });
+        } else {
+          setStatus("hidden");
         }
-      })
-      .catch(() => {})
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [shippingAddress, shop.myshopifyDomain, applyAttributeChange]);
+      } catch (error) {
+        console.error("Delivery check failed:", error);
+        setStatus("hidden");
+      }
+    }
 
-  if (loading || deliveryAvailable === null) return null;
+    checkDelivery();
+  }, [cartLines, shop, applyAttributeChange]);
 
-  if (deliveryAvailable) {
-    return (
-      <Banner status="success" title="Great news!">
-        We deliver to your area! Your order will arrive fresh and fast.
-      </Banner>
-    );
+  if (status === "loading" || status === "hidden") {
+    return null;
   }
 
-  return null;
+  return <Banner status="success">{message}</Banner>;
 }
