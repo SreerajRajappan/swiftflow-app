@@ -20,7 +20,7 @@ import { DeliveryTab } from "../components/DeliveryTab";
 import { RevenueSuiteTab } from "../components/RevenueSuiteTab";
 import { InsightsTab } from "../components/InsightsTab";
 
-// Utility: HEX to HSB (Kept in main file as it is a helper for state)
+// Utility: HEX to HSB
 function hexToHsb(hex: string) {
   let h = hex.replace("#", "");
   if (h.length === 3)
@@ -85,24 +85,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const settings = await prisma.appSettings.findUnique({ where: { shop } });
   const totalViews = await prisma.productView.count({ where: { shop } });
 
-  const conversionData = await prisma.conversion.aggregate({
-    _sum: { amount: true },
+  // FIXED: Using orderValue instead of amount
+  const conversionData = await prisma.conversionEvent.aggregate({
+    _sum: { orderValue: true },
     _count: { id: true },
   });
 
-  const totalRevenue = conversionData._sum.amount || 0;
+  const totalRevenue = conversionData._sum.orderValue || 0;
   const conversionCount = conversionData._count.id || 0;
   const dailyGoal = 500;
   const goalProgress = (totalRevenue / dailyGoal) * 100;
   const conversionRate =
     totalViews > 0 ? ((conversionCount / totalViews) * 100).toFixed(2) : "0.00";
 
-  const recentConversions = await prisma.conversion.findMany({
+  const recentConversions = await prisma.conversionEvent.findMany({
     orderBy: { createdAt: "desc" },
     take: 5,
   });
 
-  // 4. Trending Products Enrichment
   const trendingData = await prisma.productView.groupBy({
     by: ["productId"],
     where: { shop },
@@ -127,15 +127,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const responseJson = await response.json();
         const product = responseJson.data?.product;
 
-        const salesForProduct = await prisma.conversion.aggregate({
-          where: { productId: item.productId },
-          _sum: { amount: true },
-        });
+        // FIXED: Removed broken aggregate for product sales (schema doesn't have productId on ConversionEvent)
         return {
           ...item,
           title: product?.title || "Unknown Product",
           image: product?.featuredMedia?.preview?.image?.url || "",
-          revenue: salesForProduct._sum.amount || 0,
+          revenue: 0,
         };
       } catch (e) {
         return { ...item, title: "Product Deleted", image: "", revenue: 0 };
@@ -173,9 +170,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const data = await response.json();
   const locations = data.data.locations.nodes;
 
-  // Manually find the first node where shipsInventory is true
   const activeHub = locations.find((node: any) => node.shipsInventory === true);
-  console.log("activeHub: ", activeHub);
 
   const lat = activeHub?.address?.latitude ?? 34.0549;
   const lng = activeHub?.address?.longitude ?? -118.2437;
@@ -206,26 +201,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
 
   if (formData.get("intent") === "reset_data") {
-    await prisma.conversion.deleteMany({});
+    await prisma.conversionEvent.deleteMany({});
     return { success: true, message: "Data reset successfully" };
   }
 
   const customText = formData.get("customText") as string;
   const customColor = formData.get("customColor") as string;
   const isEnabled = formData.get("isEnabled") === "true";
-  const fontSize = Number(formData.get("fontSize")) || 16;
+
+  // FIXED: Ensured fontSize is stored as a string as required by Prisma
+  const fontSize = String(formData.get("fontSize") || "16");
+
   const deliveryRadius = parseFloat(formData.get("deliveryRadius") as string);
   const recoveryEnabled = formData.get("recoveryEnabled") === "true";
 
   const storeLat = parseFloat(formData.get("storeLat") as string);
   const storeLng = parseFloat(formData.get("storeLng") as string);
 
+  // FIXED: Mapped the UI keys to the actual Prisma column names
   await prisma.appSettings.upsert({
     where: { shop },
     update: {
-      customText,
-      customColor,
-      isEnabled,
+      headerText: customText,
+      headerColor: customColor,
+      revenueSuiteEnabled: isEnabled,
       fontSize,
       deliveryRadius,
       recoveryEnabled,
@@ -235,9 +234,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     },
     create: {
       shop,
-      customText,
-      customColor,
-      isEnabled,
+      headerText: customText,
+      headerColor: customColor,
+      revenueSuiteEnabled: isEnabled,
       fontSize,
       deliveryRadius,
       recoveryEnabled,
@@ -275,27 +274,32 @@ export default function Index() {
   const navigate = useNavigate();
 
   const [selectedTab, setSelectedTab] = useState(0);
-  const [fontSize, setFontSize] = useState(settings?.fontSize || 16);
+
+  // FIXED: Fetch the exact names Prisma outputs
+  const [fontSize, setFontSize] = useState(Number(settings?.fontSize) || 16);
   const [deliveryRadius, setDeliveryRadius] = useState(() => {
     if (settings?.hasCustomizedRadius) {
       return Number(settings.deliveryRadius);
     }
-
     return unit === "miles" ? 6 : 10;
   });
+
   const [recoveryEnabled, setRecoveryEnabled] = useState(
     settings?.recoveryEnabled || false,
   );
+
+  const [customText, setCustomText] = useState(settings?.headerText || "");
+  const [color, setColor] = useState(
+    hexToHsb(settings?.headerColor || "#5c6ac4"),
+  );
+  const [isEnabled, setIsEnabled] = useState(
+    settings?.revenueSuiteEnabled ?? true,
+  );
+
   const handleTabChange = useCallback(
     (index: number) => setSelectedTab(index),
     [],
   );
-
-  const [customText, setCustomText] = useState(settings?.customText || "");
-  const [color, setColor] = useState(
-    hexToHsb(settings?.customColor || "#5c6ac4"),
-  );
-  const [isEnabled, setIsEnabled] = useState(settings?.isEnabled ?? true);
 
   const tabs = [
     { id: "personalizer", content: "Personalizer" },
@@ -335,7 +339,6 @@ export default function Index() {
     );
   };
 
-  // Confetti & Toast Effects
   useEffect(() => {
     if (parseFloat(goalProgress) >= 100 && selectedTab === 2) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
@@ -423,7 +426,6 @@ export default function Index() {
   );
 }
 
-// Helper needed for the TitleBar/Action buttons
 function hsbToHex(color: {
   hue: number;
   saturation: number;

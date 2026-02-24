@@ -27,7 +27,7 @@ model Session {
 
 model AppSettings {
   id                   String   @id @default(cuid())
-  shopDomain           String   @unique
+  shop                 String   @unique
   deliveryRadius       Float    @default(6.0)
   unitSystem           String   @default("IMPERIAL")
   hasCustomizedRadius  Boolean  @default(false)
@@ -38,18 +38,19 @@ model AppSettings {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   
-  // Personalizer settings
   headerText           String   @default("Local Delivery Available")
   headerColor          String   @default("#008060")
   fontSize             String   @default("16")
   buttonText           String   @default("Check Availability")
+
+  recoveryEnabled      Boolean  @default(false)
   
-  @@index([shopDomain])
+  @@index([shop])
 }
 
 model DeliveryCheck {
   id              String   @id @default(cuid())
-  shopDomain      String
+  shop            String
   customerAddress String?
   customerLat     Float?
   customerLng     Float?
@@ -58,26 +59,26 @@ model DeliveryCheck {
   cartToken       String?
   timestamp       DateTime @default(now())
   
-  @@index([shopDomain, timestamp])
+  @@index([shop, timestamp])
   @@index([cartToken])
 }
 
 model ConversionEvent {
   id          String   @id @default(cuid())
-  shopDomain  String
+  shop        String
   orderId     String   @unique
   orderValue  Float
-  source      String   // "delivery_badge", "cart_recovery", "manual"
+  source      String   
   cartToken   String?
   createdAt   DateTime @default(now())
   
-  @@index([shopDomain, createdAt])
+  @@index([shop, createdAt])
   @@index([cartToken])
 }
 
 model CartRecovery {
   id              String   @id @default(cuid())
-  shopDomain      String
+  shop            String
   cartToken       String   @unique
   customerEmail   String?
   customerAddress String?
@@ -93,18 +94,18 @@ model CartRecovery {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   
-  @@index([shopDomain, emailSent, recovered])
+  @@index([shop, emailSent, recovered])
   @@index([cartToken])
 }
 
 model ProductView {
   id          String   @id @default(cuid())
-  shopDomain  String
+  shop        String
   productId   String
   productTitle String
   viewCount   Int      @default(1)
   lastViewed  DateTime @default(now())
   
-  @@unique([shopDomain, productId])
-  @@index([shopDomain, lastViewed])
+  @@unique([shop, productId])
+  @@index([shop, lastViewed])
 }

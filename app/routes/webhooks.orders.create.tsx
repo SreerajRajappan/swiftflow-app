@@ -5,7 +5,18 @@ import db from "../db.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   try {
+    // 1. Extract topic again
     const { topic, shop, payload } = await authenticate.webhook(request);
+
+    // 2. USE CASE: Helpful logging for your server terminal
+    console.log(`[Webhook] Received ${topic} for shop: ${shop}`);
+
+    // 3. USE CASE: Security Guard - Stop execution if it's the wrong webhook
+    if (topic !== "ORDERS_CREATE") {
+      console.warn(`[Webhook] Ignored unhandled topic: ${topic}`);
+      return new Response("Unhandled webhook topic", { status: 200 });
+      // Note: We return 200 so Shopify knows we received it, but we safely ignore it.
+    }
 
     if (!payload || !shop) {
       return json({ error: "Invalid webhook payload" }, { status: 400 });
