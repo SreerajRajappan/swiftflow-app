@@ -1,0 +1,10 @@
+{
+  "name": "delivery-badge",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@shopify/ui-extensions-react": "2025.1.x",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {}
+}

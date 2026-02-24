@@ -21,7 +21,7 @@ const shopify = shopifyApp({
   webhooks: {
     ORDERS_CREATE: {
       deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/orders_create",
+      callbackUrl: "/webhooks/orders/create",
     },
     CARTS_UPDATE: {
       deliveryMethod: DeliveryMethod.Http,
@@ -32,7 +32,6 @@ const shopify = shopifyApp({
       callbackUrl: "/webhooks/app/uninstalled",
     },
   },
-  // Updated to Public to allow Billing API usage
   distribution: AppDistribution.AppStore,
   future: {
     unstable_newEmbeddedAuthStrategy: true,

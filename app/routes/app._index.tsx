@@ -210,7 +210,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { success: true, message: "Data reset successfully" };
   }
 
-  // 1. Extract values correctly from FormData
   const customText = formData.get("customText") as string;
   const customColor = formData.get("customColor") as string;
   const isEnabled = formData.get("isEnabled") === "true";
@@ -218,7 +217,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const deliveryRadius = parseFloat(formData.get("deliveryRadius") as string);
   const recoveryEnabled = formData.get("recoveryEnabled") === "true";
 
-  // 2. Perform Upsert with newly defined variables
+  const storeLat = parseFloat(formData.get("storeLat") as string);
+  const storeLng = parseFloat(formData.get("storeLng") as string);
+
   await prisma.appSettings.upsert({
     where: { shop },
     update: {
@@ -229,6 +230,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       deliveryRadius,
       recoveryEnabled,
       hasCustomizedRadius: true,
+      storeLat,
+      storeLng,
     },
     create: {
       shop,
@@ -239,6 +242,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       deliveryRadius,
       recoveryEnabled,
       hasCustomizedRadius: true,
+      storeLat,
+      storeLng,
     },
   });
 
@@ -269,7 +274,6 @@ export default function Index() {
   const isSaving = useNavigation().state === "submitting";
   const navigate = useNavigate();
 
-  // Tab State
   const [selectedTab, setSelectedTab] = useState(0);
   const [fontSize, setFontSize] = useState(settings?.fontSize || 16);
   const [deliveryRadius, setDeliveryRadius] = useState(() => {
@@ -287,7 +291,6 @@ export default function Index() {
     [],
   );
 
-  // Form State
   const [customText, setCustomText] = useState(settings?.customText || "");
   const [color, setColor] = useState(
     hexToHsb(settings?.customColor || "#5c6ac4"),
@@ -310,6 +313,8 @@ export default function Index() {
         fontSize: String(fontSize),
         deliveryRadius: String(deliveryRadius),
         recoveryEnabled: String(recoveryEnabled),
+        storeLat: String(shopCoordinates.lat),
+        storeLng: String(shopCoordinates.lng),
       },
       { method: "POST" },
     );

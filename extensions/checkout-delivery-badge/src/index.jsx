@@ -1,11 +1,10 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   reactExtension,
   Banner,
   useApi,
   useApplyAttributeChange,
-  useExtensionCapability,
-  useBuyerJourneyIntercept,
+  useShippingAddress,
 } from "@shopify/ui-extensions-react/checkout";
 
 export default reactExtension("purchase.checkout.block.render", () => (
@@ -13,49 +12,41 @@ export default reactExtension("purchase.checkout.block.render", () => (
 ));
 
 function DeliveryBadge() {
-  const { extension, shop } = useApi();
+  const { shop } = useApi();
   const [deliveryAvailable, setDeliveryAvailable] = useState(null);
   const [loading, setLoading] = useState(true);
-  const applyAttributeChange = useApplyAttributeChange();
 
-  // Get customer's address from checkout
-  const { shippingAddress } = useApi();
+  const applyAttributeChange = useApplyAttributeChange();
+  const shippingAddress = useShippingAddress();
 
   useEffect(() => {
-    async function checkDelivery() {
-      if (!shippingAddress?.address1) {
-        setLoading(false);
-        return;
-      }
+    if (!shippingAddress?.address1) {
+      setLoading(false);
+      return;
+    }
 
-      try {
-        // Call your app's API to check if address is in delivery radius
-        const response = await fetch(
-          `https://your-app-url.com/api/check-delivery?shop=${shop.myshopifyDomain}&address=${encodeURIComponent(
-            `${shippingAddress.address1}, ${shippingAddress.city}, ${shippingAddress.zip}`,
-          )}`,
-        );
+    // ⚠️ NOTE: Replace 'your-app-url.com' with your actual production or tunnel URL
+    const url = `https://your-app-url.com/api/check-delivery?shop=${shop.myshopifyDomain}&address=${encodeURIComponent(
+      `${shippingAddress.address1}, ${shippingAddress.city}, ${shippingAddress.zip}`,
+    )}`;
 
-        const data = await response.json();
+    fetch(url)
+      .then((response) => response.json())
+      .then((data) => {
         setDeliveryAvailable(data.inRadius);
-
-        // Track this view for analytics
         if (data.inRadius) {
-          await applyAttributeChange({
+          applyAttributeChange({
             type: "updateAttribute",
             key: "_swiftflow_in_delivery_zone",
             value: "true",
           });
         }
-      } catch (error) {
-        console.error("Delivery check failed:", error);
-      } finally {
+      })
+      .catch(() => {})
+      .finally(() => {
         setLoading(false);
-      }
-    }
-
-    checkDelivery();
-  }, [shippingAddress]);
+      });
+  }, [shippingAddress, shop.myshopifyDomain, applyAttributeChange]);
 
   if (loading || deliveryAvailable === null) return null;
 
