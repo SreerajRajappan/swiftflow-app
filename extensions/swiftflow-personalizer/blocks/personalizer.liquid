@@ -8,17 +8,11 @@
 </div>
 
 <script>
+  // 1. Fetch settings from App Proxy
   async function loadSwiftFlowSettings() {
-    console.log("Checking SwiftFlow Proxy...");
     try {
-      // Use the exact subpath defined in your shopify.app.toml
-      const response = await fetch('/apps/swiftflow-revenue?product_id={{ product.id }}', {
-        method: 'GET',
-        headers: { "Content-Type": "application/json" }
-      });
-      
+      const response = await fetch('/apps/swiftflow-revenue?product_id={{ product.id }}');
       const data = await response.json();
-      console.log("SwiftFlow Data received:", data);
 
       if (data && data.headerText) {
         const banner = document.getElementById('sf-banner');
@@ -35,11 +29,38 @@
     }
   }
 
-  // Run immediately if DOM is already loaded, otherwise wait
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadSwiftFlowSettings);
-  } else {
+  // 2. The Bulletproof Cart Sync Logic
+  function attachToCart() {
+    const customInput = document.getElementById('sf-custom-text');
+    // Find the standard Shopify Add to Cart form on the page
+    const productForm = document.querySelector('form[action^="/cart/add"]');
+
+    if (productForm && customInput) {
+      // Create a hidden input that lives INSIDE the actual theme form
+      const hiddenInput = document.createElement('input');
+      hiddenInput.type = 'hidden';
+      hiddenInput.name = 'properties[Personalization text]';
+      productForm.appendChild(hiddenInput);
+
+      // Whenever the user types in your box, copy it to the hidden input
+      customInput.addEventListener('input', (e) => {
+        hiddenInput.value = e.target.value;
+      });
+    } else {
+      console.warn("SwiftFlow: Could not find the main product form.");
+    }
+  }
+
+  // 3. Initialize Everything
+  function initSwiftFlow() {
     loadSwiftFlowSettings();
+    attachToCart();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSwiftFlow);
+  } else {
+    initSwiftFlow();
   }
 </script>
 
