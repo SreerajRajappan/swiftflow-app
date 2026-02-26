@@ -1,87 +1,74 @@
-import React, { useEffect, useState } from "react";
-import {
-  reactExtension,
-  Banner,
-  useApi,
-  useCartLines,
-  useApplyAttributeChange,
-} from "@shopify/ui-extensions-react/checkout";
+import "@shopify/ui-extensions/preact";
+import { render } from "preact";
+import { useEffect, useState } from "preact/hooks";
 
-export default reactExtension("purchase.checkout.block.render", () => (
-  <DeliveryBadge />
-));
+// 1. New entry point format
+export default function extension() {
+  render(<DeliveryBadge />, document.body);
+}
 
 function DeliveryBadge() {
-  const { shop, extensionPoint } = useApi();
-  const cartLines = useCartLines();
-  const applyAttributeChange = useApplyAttributeChange();
-  const [status, setStatus] = useState("loading");
-  const [message, setMessage] = useState("");
+  // 2. We now read directly from the global `shopify` object!
+  const shopDomain = shopify.shop.myshopifyDomain;
+  const shippingAddress = shopify.shippingAddress?.value;
+
+  const [deliveryAvailable, setDeliveryAvailable] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function checkDelivery() {
-      if (!cartLines || cartLines.length === 0) {
-        setStatus("hidden");
+      if (!shippingAddress?.address1) {
+        setLoading(false);
         return;
       }
 
       try {
-        const shopDomain = shop.myshopifyDomain;
+        // ⚠️ NOTE: Replace 'your-app-url.com' with your actual App Proxy / Tunnel URL
+        const response = await fetch(
+          `https://your-app-url.com/api/check-delivery?shop=${shopDomain}&address=${encodeURIComponent(
+            `${shippingAddress.address1}, ${shippingAddress.city}, ${shippingAddress.zip}`,
+          )}`,
+        );
 
-        // Try to get user's location
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            async (position) => {
-              const { latitude, longitude } = position.coords;
+        const data = await response.json();
+        setDeliveryAvailable(data.inRadius);
 
-              // Call the correct API endpoint
-              const response = await fetch(
-                `https://${shopDomain}/apps/api/delivery-check?shop=${shopDomain}&lat=${latitude}&lng=${longitude}`,
-                {
-                  method: "GET",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                },
-              );
-
-              const data = await response.json();
-
-              if (data.inRadius) {
-                setStatus("success");
-                setMessage(
-                  data.message || "Great news! We deliver to your area.",
-                );
-
-                await applyAttributeChange({
-                  type: "updateAttribute",
-                  key: "_swiftflow_delivery",
-                  value: "true",
-                });
-              } else {
-                setStatus("hidden");
-              }
-            },
-            (error) => {
-              console.error("Geolocation error:", error);
-              setStatus("hidden");
-            },
-          );
-        } else {
-          setStatus("hidden");
+        // Check if we are allowed to update attributes, then apply it
+        if (
+          data.inRadius &&
+          shopify.instructions.value.attributes.canUpdateAttributes
+        ) {
+          await shopify.applyAttributeChange({
+            type: "updateAttribute",
+            key: "_swiftflow_in_delivery_zone",
+            value: "true",
+          });
         }
       } catch (error) {
         console.error("Delivery check failed:", error);
-        setStatus("hidden");
+      } finally {
+        setLoading(false);
       }
     }
 
     checkDelivery();
-  }, [cartLines, shop, applyAttributeChange]);
+  }, [
+    shippingAddress?.address1,
+    shippingAddress?.city,
+    shippingAddress?.zip,
+    shopDomain,
+  ]);
 
-  if (status === "loading" || status === "hidden") {
-    return null;
+  if (loading || deliveryAvailable === null) return null;
+
+  if (deliveryAvailable) {
+    // 3. We use Polaris Web Components natively (s-banner instead of Banner)
+    return (
+      <s-banner tone="success" heading="Great news!">
+        We deliver to your area! Your order will arrive fresh and fast.
+      </s-banner>
+    );
   }
 
-  return <Banner status="success">{message}</Banner>;
+  return null;
 }

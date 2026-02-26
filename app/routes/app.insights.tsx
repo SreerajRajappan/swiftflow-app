@@ -33,7 +33,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   const totalRevenue = conversions.reduce(
-    (sum, conv) => sum + conv.orderValue,
+    (sum: number, conv: any) => sum + conv.orderValue,
     0,
   );
   const totalOrders = conversions.length;
@@ -46,7 +46,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     },
   });
 
-  const inRadiusCount = deliveryChecks.filter((c) => c.inRadius).length;
+  const inRadiusCount = deliveryChecks.filter((c: any) => c.inRadius).length;
   const totalChecks = deliveryChecks.length;
 
   // Get cart recovery stats
@@ -59,7 +59,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 
   const recoveredRevenue = recoveredCarts.reduce(
-    (sum, cart) => sum + (cart.recoveryValue || 0),
+    (sum: number, cart: any) => sum + (cart.recoveryValue || 0),
     0,
   );
 
@@ -78,7 +78,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function Insights() {
   const data = useLoaderData<typeof loader>();
 
-  const tableRows = data.recentConversions.map((conv) => [
+  const tableRows = data.recentConversions.map((conv: any) => [
     conv.orderId,
     `$${conv.orderValue.toFixed(2)}`,
     <Badge

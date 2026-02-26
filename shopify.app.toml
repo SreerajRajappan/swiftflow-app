@@ -27,6 +27,6 @@ scopes = "read_locations,read_orders,write_app_proxy,write_products"
 redirect_urls = [ "https://example.com/api/auth" ]
 
 [app_proxy]
-url = "https://example.com/api/proxy"
+url = "https://techrepublic-sun-announces-prevent.trycloudflare.com"
 subpath = "swiftflow-revenue"
 prefix = "apps"

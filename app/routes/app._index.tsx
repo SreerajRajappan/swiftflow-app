@@ -85,7 +85,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const settings = await prisma.appSettings.findUnique({ where: { shop } });
   const totalViews = await prisma.productView.count({ where: { shop } });
 
-  // FIXED: Using orderValue instead of amount
   const conversionData = await prisma.conversionEvent.aggregate({
     _sum: { orderValue: true },
     _count: { id: true },
@@ -112,7 +111,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   const enrichedProducts = await Promise.all(
-    trendingData.map(async (item) => {
+    trendingData.map(async (item: any) => {
       try {
         const response = await admin.graphql(
           `#graphql
@@ -209,7 +208,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const customColor = formData.get("customColor") as string;
   const isEnabled = formData.get("isEnabled") === "true";
 
-  // FIXED: Ensured fontSize is stored as a string as required by Prisma
   const fontSize = String(formData.get("fontSize") || "16");
 
   const deliveryRadius = parseFloat(formData.get("deliveryRadius") as string);
@@ -218,7 +216,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const storeLat = parseFloat(formData.get("storeLat") as string);
   const storeLng = parseFloat(formData.get("storeLng") as string);
 
-  // FIXED: Mapped the UI keys to the actual Prisma column names
   await prisma.appSettings.upsert({
     where: { shop },
     update: {
@@ -275,7 +272,6 @@ export default function Index() {
 
   const [selectedTab, setSelectedTab] = useState(0);
 
-  // FIXED: Fetch the exact names Prisma outputs
   const [fontSize, setFontSize] = useState(Number(settings?.fontSize) || 16);
   const [deliveryRadius, setDeliveryRadius] = useState(() => {
     if (settings?.hasCustomizedRadius) {
