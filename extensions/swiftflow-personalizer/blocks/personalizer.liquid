@@ -4,64 +4,73 @@
 
 <div class="swiftflow-container" style="padding: 20px; border: 1px solid #e1e3e5; border-radius: 8px; background: #fafbfb;">
   <h4 id="sf-block-heading" style="margin-bottom: 10px; font-weight: 600;">{{ block.settings.heading }}</h4>
-  <input type="text" id="sf-custom-text" placeholder="Type here..." style="width: 100%; padding: 10px; border: 1px solid #c9cccf; border-radius: 4px;">
+  
+  <input type="text" 
+         id="sf-custom-text" 
+         placeholder="Type here..." 
+         style="width: 100%; padding: 10px; border: 1px solid #c9cccf; border-radius: 4px;">
 </div>
 
 <script>
-  // 1. Fetch settings from App Proxy
-  async function loadSwiftFlowSettings() {
-    try {
-      const response = await fetch('/apps/swiftflow-revenue?product_id={{ product.id }}');
-      const data = await response.json();
-
-      if (data && data.headerText) {
-        const banner = document.getElementById('sf-banner');
-        const text = document.getElementById('sf-banner-text');
+  (function() {
+    async function loadSwiftFlow() {
+      try {
+        const response = await fetch('/apps/swiftflow-revenue?product_id={{ product.id }}');
+        if (!response.ok) return;
         
-        if (banner && text) {
+        const data = await response.json();
+
+        if (data.headerText) {
+          const banner = document.getElementById('sf-banner');
+          const text = document.getElementById('sf-banner-text');
+          
           banner.style.display = 'block';
           banner.style.backgroundColor = data.headerColor || '#008060';
           text.innerText = data.headerText;
         }
+      } catch (e) {
+        console.error("SwiftFlow Script Error:", e);
       }
-    } catch (e) {
-      console.error("SwiftFlow Proxy Error:", e);
     }
-  }
 
-  // 2. The Bulletproof Cart Sync Logic
-  function attachToCart() {
-    const customInput = document.getElementById('sf-custom-text');
-    // Find the standard Shopify Add to Cart form on the page
-    const productForm = document.querySelector('form[action^="/cart/add"]');
+    // Inject hidden inputs directly into the theme's forms
+    function attachToCartForm() {
+      const visibleInput = document.getElementById('sf-custom-text');
+      if (!visibleInput) return;
 
-    if (productForm && customInput) {
-      // Create a hidden input that lives INSIDE the actual theme form
-      const hiddenInput = document.createElement('input');
-      hiddenInput.type = 'hidden';
-      hiddenInput.name = 'properties[Personalization text]';
-      productForm.appendChild(hiddenInput);
+      // Find all "Add to Cart" forms on the page
+      const productForms = document.querySelectorAll('form[action*="/cart/add"]');
 
-      // Whenever the user types in your box, copy it to the hidden input
-      customInput.addEventListener('input', (e) => {
-        hiddenInput.value = e.target.value;
+      productForms.forEach(form => {
+        // Create a hidden field inside the form
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'properties[Personalization]';
+        hiddenInput.className = 'sf-hidden-personalization';
+        form.appendChild(hiddenInput);
       });
-    } else {
-      console.warn("SwiftFlow: Could not find the main product form.");
+
+      // Every time the customer types, copy the text to the hidden fields
+      visibleInput.addEventListener('input', function(e) {
+        const hiddenInputs = document.querySelectorAll('.sf-hidden-personalization');
+        hiddenInputs.forEach(hidden => {
+          hidden.value = e.target.value;
+        });
+      });
     }
-  }
 
-  // 3. Initialize Everything
-  function initSwiftFlow() {
-    loadSwiftFlowSettings();
-    attachToCart();
-  }
+    function init() {
+      loadSwiftFlow();
+      // A tiny 500ms delay to let the theme finish rendering its forms
+      setTimeout(attachToCartForm, 500); 
+    }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initSwiftFlow);
-  } else {
-    initSwiftFlow();
-  }
+    if (window.Shopify && window.Shopify.designMode) {
+      init();
+    } else {
+      document.addEventListener('DOMContentLoaded', init);
+    }
+  })();
 </script>
 
 {% schema %}
