@@ -39,6 +39,42 @@
   {% endif %}
 </script>
 
+{% if request.page_type == 'product' %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Inject Liquid variables into the script
+    const productId = "{{ product.id }}";
+    const productTitle = "{{ product.title | escape }}";
+    const shopDomain = Shopify.shop;
+
+    // Prevent duplicate logging for the same session
+    if (!sessionStorage.getItem(`viewed_${productId}`)) {
+      
+      // The fetch URL must match the App Proxy prefix configured in your Partner Dashboard 
+      // e.g., if your prefix is 'apps/swiftflow', use that here.
+      fetch('/apps/swiftflow/api/track-view', { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          productId: productId,
+          productTitle: productTitle,
+          shopDomain: shopDomain
+        })
+      })
+      .then(response => {
+        if (response.ok) {
+          sessionStorage.setItem(`viewed_${productId}`, 'true');
+          console.log('SwiftFlow: Product view tracked.');
+        }
+      })
+      .catch(error => console.error('SwiftFlow Tracking Error:', error));
+    }
+  });
+</script>
+{% endif %}
+
 {% schema %}
 {
   "name": "SF: Live Visitor Count",

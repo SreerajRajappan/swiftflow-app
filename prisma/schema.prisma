@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -87,6 +87,8 @@ model CartRecovery {
   customerLat     Float?
   customerLng     Float?
   inDeliveryZone  Boolean
+  status          String   @default("ABANDONED")
+  checkoutUrl     String?
   emailSent       Boolean  @default(false)
   emailSentAt     DateTime?
   recovered       Boolean  @default(false)

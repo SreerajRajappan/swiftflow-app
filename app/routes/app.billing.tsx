@@ -18,6 +18,7 @@ import {
   CashDollarIcon,
 } from "@shopify/polaris-icons";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
 import { Form, useNavigation } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
 import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "../constants";
@@ -53,7 +54,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     if (reauthUrl) return redirect(reauthUrl, { target: "_parent" });
 
     console.error("Billing Error:", error);
-    return Response.json({ error: "Billing failed" }, { status: 500 });
+    return json({ error: "Billing failed" }, { status: 500 });
   }
 };
 

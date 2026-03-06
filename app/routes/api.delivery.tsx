@@ -1,4 +1,5 @@
 //api.delivery.tsx
+import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 
@@ -28,13 +29,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // Cast the response to any or a specific interface to bypass the 'errors' type error
     const result = (await response.json()) as any;
 
-    return Response.json({
+    return json({
       orders: result.data?.orders?.nodes || [],
       // result.errors is now accessible
       errors: result.errors || null,
     });
   } catch (error) {
     console.error("Delivery API Error:", error);
-    return Response.json({ error: "Failed to fetch orders" }, { status: 500 });
+    return json({ error: "Failed to fetch orders" }, { status: 500 });
   }
 };

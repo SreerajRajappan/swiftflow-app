@@ -11,7 +11,7 @@
     "env": "shopify app env",
     "start": "remix-serve ./build/server/index.js",
     "docker-start": "npm run setup && npm run start",
-    "setup": "prisma generate && prisma migrate deploy",
+    "setup": "prisma generate && prisma db push --accept-data-loss",
     "lint": "eslint --cache --cache-location ./node_modules/.cache/eslint .",
     "shopify": "shopify",
     "prisma": "prisma",
@@ -23,6 +23,7 @@
     "node": ">=20.19 <22 || >=22.12"
   },
   "dependencies": {
+    "@flydotio/litestream": "^1.0.1",
     "@googlemaps/js-api-loader": "^2.0.2",
     "@prisma/client": "^6.2.1",
     "@remix-run/dev": "^2.16.1",
@@ -32,6 +33,7 @@
     "@remix-run/serve": "^2.16.1",
     "@shopify/app-bridge-react": "^4.1.6",
     "@shopify/polaris": "^12.0.0",
+    "@shopify/polaris-icons": "^9.3.1",
     "@shopify/shopify-app-remix": "^4.1.0",
     "@shopify/shopify-app-session-storage-prisma": "^8.0.0",
     "@types/google.maps": "^3.58.1",
@@ -40,9 +42,11 @@
     "prisma": "^6.2.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "resend": "^6.9.2",
     "vite-tsconfig-paths": "^5.0.1"
   },
   "devDependencies": {
+    "@flydotio/dockerfile": "^0.7.10",
     "@remix-run/eslint-config": "^2.16.1",
     "@remix-run/route-config": "^2.16.1",
     "@shopify/api-codegen-preset": "^1.1.1",
@@ -79,5 +83,8 @@
     "minimatch": "9.0.5",
     "vite": "^6.2.2"
   },
-  "author": "sreeraj"
+  "author": "sreeraj",
+  "dockerfile": {
+    "litestream": true
+  }
 }

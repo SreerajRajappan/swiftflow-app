@@ -16,6 +16,9 @@ RUN npm remove @shopify/cli
 
 COPY . .
 
+RUN npx prisma generate
 RUN npm run build
 
-CMD ["npm", "run", "docker-start"]
+ENTRYPOINT []
+
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run start"]
