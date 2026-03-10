@@ -5,69 +5,87 @@ import db from "../db.server";
 
 export async function action({ request }: ActionFunctionArgs) {
   try {
-    // 1. Extract topic again
+    // 1. Extract topic and payload (From your version)
     const { topic, shop, payload } = await authenticate.webhook(request);
 
-    // 2. USE CASE: Helpful logging for your server terminal
     console.log(`[Webhook] Received ${topic} for shop: ${shop}`);
 
-    // 3. USE CASE: Security Guard - Stop execution if it's the wrong webhook
+    // 2. Security Guard (From your version)
     if (topic !== "ORDERS_CREATE") {
       console.warn(`[Webhook] Ignored unhandled topic: ${topic}`);
       return new Response("Unhandled webhook topic", { status: 200 });
-      // Note: We return 200 so Shopify knows we received it, but we safely ignore it.
     }
 
     if (!payload || !shop) {
       return json({ error: "Invalid webhook payload" }, { status: 400 });
     }
 
-    const order = payload as any;
+    // 3. Safe Parsing (From Claude's version)
+    const order = payload as Record<string, any>;
+    const orderId = String(order.id);
+    const orderValue = parseFloat(order.total_price ?? "0");
+    const cartToken = (order.cart_token as string) ?? null;
 
-    // Check for SwiftFlow attribution
-    const swiftflowAttr = order.note_attributes?.find(
-      (attr: any) => attr.name === "_swiftflow_delivery",
-    );
+    // --- SwiftFlow delivery badge attribution ---
+    const swiftAttr = (
+      (order.note_attributes as Array<{ name: string; value: string }>) ?? []
+    ).find((a) => a.name === "_swiftflow_delivery");
 
-    if (swiftflowAttr?.value === "true") {
-      // Create conversion event
-      await db.conversionEvent.create({
-        data: {
-          shop,
-          orderId: order.id.toString(),
-          orderValue: parseFloat(order.total_price || "0"),
-          source: "delivery_badge",
-          cartToken: order.cart_token,
-        },
+    if (swiftAttr?.value === "true") {
+      // IDEMPOTENCY CHECK: Prevent duplicate entries if Shopify retries the webhook
+      const exists = await db.conversionEvent.findUnique({
+        where: { orderId },
       });
-    }
-
-    // Check for cart recovery
-    if (order.cart_token) {
-      const cartRecovery = await db.cartRecovery.findUnique({
-        where: { cartToken: order.cart_token },
-      });
-
-      if (cartRecovery && cartRecovery.emailSent && !cartRecovery.recovered) {
-        await db.cartRecovery.update({
-          where: { id: cartRecovery.id },
-          data: {
-            recovered: true,
-            recoveredAt: new Date(),
-            recoveryValue: parseFloat(order.total_price || "0"),
-          },
-        });
-
-        // Also create conversion event
+      if (!exists) {
         await db.conversionEvent.create({
           data: {
             shop,
-            orderId: order.id.toString(),
-            orderValue: parseFloat(order.total_price || "0"),
-            source: "cart_recovery",
-            cartToken: order.cart_token,
+            orderId,
+            orderValue,
+            source: "delivery_badge",
+            cartToken,
           },
         });
+      }
+    }
+
+    // --- Cart recovery attribution ---
+    if (cartToken) {
+      const recovery = await db.cartRecovery.findUnique({
+        where: { cartToken },
+      });
+
+      // Only update if it hasn't already been recovered
+      if (
+        recovery &&
+        recovery.shop === shop &&
+        recovery.emailSent &&
+        !recovery.recovered
+      ) {
+        await db.cartRecovery.update({
+          where: { cartToken },
+          data: {
+            recovered: true,
+            recoveredAt: new Date(),
+            recoveryValue: orderValue,
+          },
+        });
+
+        // IDEMPOTENCY CHECK: Prevent duplicate conversions
+        const exists = await db.conversionEvent.findUnique({
+          where: { orderId },
+        });
+        if (!exists) {
+          await db.conversionEvent.create({
+            data: {
+              shop,
+              orderId,
+              orderValue,
+              source: "cart_recovery",
+              cartToken,
+            },
+          });
+        }
       }
     }
 

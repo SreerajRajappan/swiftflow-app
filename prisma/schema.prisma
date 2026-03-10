@@ -8,23 +8,21 @@ datasource db {
 }
 
 model Session {
-  id          String    @id
-  shop        String
-  state       String
-  isOnline    Boolean   @default(false)
-  scope       String?
-  expires     DateTime?
-  accessToken String
-  userId      BigInt?
-  firstName   String?
-  lastName    String?
-  email       String?
-  accountOwner Boolean  @default(false)
-  locale      String?
-  collaborator Boolean? @default(false)
-  emailVerified       Boolean?  @default(false)
-  refreshToken        String?
-  refreshTokenExpires DateTime?
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
 }
 
 model AppSettings {
@@ -37,15 +35,25 @@ model AppSettings {
   storeLng             Float?
   storeAddress         String?
   revenueSuiteEnabled  Boolean  @default(false)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
   
+  // Personalizer
   headerText           String   @default("Local Delivery Available")
   headerColor          String   @default("#008060")
   fontSize             String   @default("16")
   buttonText           String   @default("Check Availability")
-
-  recoveryEnabled      Boolean  @default(false)
+  
+  // Cart Recovery (From Claude)
+  recoveryEmailEnabled Boolean  @default(false)
+  recoveryEmailSubject String   @default("Good news! We deliver to you!")
+  recoveryEmailBody    String   @default("You left something behind! Great news — we deliver directly to your area. Come back and complete your order.")
+  
+  // A/B Testing (From Claude)
+  abTestEnabled        Boolean  @default(false)
+  abTestMessageA       String   @default("We deliver to your area!")
+  abTestMessageB       String   @default("Fast local delivery available!")
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
   
   @@index([shop])
 }
@@ -70,7 +78,7 @@ model ConversionEvent {
   shop        String
   orderId     String   @unique
   orderValue  Float
-  source      String   
+  source      String
   cartToken   String?
   createdAt   DateTime @default(now())
   
@@ -79,37 +87,60 @@ model ConversionEvent {
 }
 
 model CartRecovery {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   shop            String
-  cartToken       String   @unique
+  cartToken       String    @unique
   customerEmail   String?
   customerAddress String?
   customerLat     Float?
   customerLng     Float?
   inDeliveryZone  Boolean
-  status          String   @default("ABANDONED")
-  checkoutUrl     String?
-  emailSent       Boolean  @default(false)
+  emailSent       Boolean   @default(false)
   emailSentAt     DateTime?
-  recovered       Boolean  @default(false)
+  recovered       Boolean   @default(false)
   recoveredAt     DateTime?
   recoveryValue   Float?
   cartValue       Float?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  abTestVariant   String?
+  
+  // --- AGENTIC FIELDS ---
+  lineItems       Json?    
+  discountCode    String?  
+  agentStatus     String   @default("IDLE") 
+  generatedEmail  String?  @db.Text
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   
   @@index([shop, emailSent, recovered])
   @@index([cartToken])
 }
 
 model ProductView {
-  id          String   @id @default(cuid())
-  shop        String
-  productId   String
+  id           String   @id @default(cuid())
+  shop         String
+  productId    String
   productTitle String
-  viewCount   Int      @default(1)
-  lastViewed  DateTime @default(now())
+  viewCount    Int      @default(1)
+  lastViewed   DateTime @default(now())
   
   @@unique([shop, productId])
   @@index([shop, lastViewed])
+}
+
+// --- OUR ENTERPRISE ENGINE ---
+model RevenueLeak {
+  id              String   @id @default(cuid())
+  shop            String
+  type            String   
+  severity        String   
+  title           String   
+  potentialValue  Float    
+  status          String   @default("DETECTED") 
+  metadata        Json?    
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shop, status])
+  @@index([shop, type])
 }

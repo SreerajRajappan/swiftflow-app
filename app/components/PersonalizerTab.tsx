@@ -7,8 +7,8 @@ import {
   Text,
   TextField,
   Button,
-  ColorPicker,
   RangeSlider,
+  Box,
 } from "@shopify/polaris";
 import { EditIcon } from "@shopify/polaris-icons";
 import "../styles/PersonalizerTab.css";
@@ -18,9 +18,12 @@ interface PersonalizerTabProps {
   trialDaysLeft: number;
   customText: string;
   setCustomText: (val: string) => void;
-  color: any;
-  setColor: (val: any) => void;
+  // NEW: Added the button text prop
+  buttonText: string;
+  setButtonText: (val: string) => void;
+  // REMOVED HSB ColorPicker props, swapped for standard hex string
   hexColor: string;
+  setHexColor: (val: string) => void;
   fontSize: number;
   setFontSize: (val: number) => void;
   isSaving: boolean;
@@ -28,16 +31,28 @@ interface PersonalizerTabProps {
   navigate: (path: string) => void;
 }
 
-const SALES_EMOJIS = ["🔥", "👀", "⚡", "🛒", "⭐", "🎉", "🛍️", "🚀"];
+const SALES_EMOJIS = [
+  "🔥",
+  "👀",
+  "⚡",
+  "🛒",
+  "⭐",
+  "🎉",
+  "🛍️",
+  "🚀",
+  "📍",
+  "🚚",
+];
 
 export function PersonalizerTab({
   isPro,
   trialDaysLeft,
   customText,
   setCustomText,
-  color,
-  setColor,
+  buttonText, // New prop
+  setButtonText, // New prop
   hexColor,
+  setHexColor,
   fontSize,
   setFontSize,
   isSaving,
@@ -83,7 +98,7 @@ export function PersonalizerTab({
                 <InlineStack gap="200">
                   <Icon source={EditIcon} tone="base" />
                   <Text as="h2" variant="headingMd">
-                    Personalizer Configuration
+                    Widget Configuration
                   </Text>
                 </InlineStack>
                 <Button
@@ -96,40 +111,81 @@ export function PersonalizerTab({
                 </Button>
               </InlineStack>
 
-              <BlockStack gap="300">
+              <BlockStack gap="400">
+                <BlockStack gap="200">
+                  <TextField
+                    label="Header Text"
+                    value={customText}
+                    onChange={setCustomText}
+                    placeholder="e.g., 📍 Local Delivery Available"
+                    autoComplete="off"
+                    clearButton
+                    onClearButtonClick={() => setCustomText("")}
+                  />
+                  <InlineStack gap="200">
+                    {SALES_EMOJIS.map((e) => (
+                      <Button
+                        key={e}
+                        size="micro"
+                        onClick={() => setCustomText(customText + " " + e)}
+                      >
+                        {e}
+                      </Button>
+                    ))}
+                  </InlineStack>
+                </BlockStack>
+
+                {/* NEW: Button Text Field from Claude */}
                 <TextField
-                  label="Widget Text"
-                  value={customText}
-                  onChange={setCustomText}
-                  placeholder="e.g., 🔥 15 people are viewing this right now!" // Restored placeholder
+                  label="Button Text"
+                  value={buttonText}
+                  onChange={setButtonText}
+                  placeholder="Check Availability"
                   autoComplete="off"
-                  clearButton // Added clear icon
-                  onClearButtonClick={() => setCustomText("")} // Handle clear
-                  helpText="Use emojis to increase urgency and social proof."
+                  helpText="The call-to-action button label."
                 />
-                <InlineStack gap="200">
-                  {SALES_EMOJIS.map((e) => (
-                    <Button
-                      key={e}
-                      size="micro"
-                      onClick={() => setCustomText(customText + e)}
-                    >
-                      {e}
-                    </Button>
-                  ))}
-                </InlineStack>
+
                 <RangeSlider
                   label={`Font Size: ${fontSize}px`}
                   value={fontSize}
                   onChange={setFontSize}
-                  min={10}
+                  min={12}
                   max={24}
                   output
                 />
-                <Text as="p" variant="bodyMd">
-                  Color Theme
-                </Text>
-                <ColorPicker onChange={setColor} color={color} />
+
+                {/* UPDATED: Native Color Picker from Claude */}
+                <BlockStack gap="200">
+                  <Text as="p" variant="bodyMd">
+                    Brand Color
+                  </Text>
+                  <InlineStack gap="300" blockAlign="center">
+                    <input
+                      type="color"
+                      value={hexColor}
+                      onChange={(e) => setHexColor(e.target.value)}
+                      style={{
+                        width: "48px",
+                        height: "48px",
+                        border: "1px solid #c9cccf",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        padding: "2px",
+                      }}
+                    />
+                    <Box maxWidth="120px">
+                      <TextField
+                        label=""
+                        labelHidden
+                        value={hexColor}
+                        onChange={setHexColor}
+                        autoComplete="off"
+                        placeholder="#008060"
+                        maxLength={7}
+                      />
+                    </Box>
+                  </InlineStack>
+                </BlockStack>
               </BlockStack>
             </BlockStack>
           </Card>
@@ -142,21 +198,50 @@ export function PersonalizerTab({
               <Text as="h2" variant="headingMd">
                 Live Preview
               </Text>
-              <div className="preview-area">
-                <div
-                  className="bubble"
-                  style={{
-                    backgroundColor: `${hexColor}15`,
-                    borderColor: hexColor,
-                    color: hexColor,
-                    fontSize: `${fontSize}px`,
-                  }}
-                >
-                  <span style={{ whiteSpace: "nowrap" }}>
-                    {customText || "🔥 15 people are viewing this right now!"}
-                  </span>
-                </div>
+
+              {/* UPDATED PREVIEW BUBBLE */}
+              <div className="preview-area" style={{ padding: "40px 20px" }}>
+                <BlockStack gap="300" align="center" inlineAlign="center">
+                  <div
+                    style={{
+                      fontSize: `${fontSize}px`,
+                      color: hexColor,
+                      fontWeight: "700",
+                      letterSpacing: "-0.01em",
+                      textAlign: "center",
+                    }}
+                  >
+                    {customText || "📍 Local Delivery Available"}
+                  </div>
+
+                  <button
+                    style={{
+                      backgroundColor: hexColor,
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "6px",
+                      padding: "10px 24px",
+                      fontSize: `${Math.max(12, fontSize - 2)}px`,
+                      cursor: "pointer",
+                      fontWeight: "600",
+                      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                      transition: "transform 0.1s ease",
+                    }}
+                    onMouseDown={(e) =>
+                      (e.currentTarget.style.transform = "scale(0.95)")
+                    }
+                    onMouseUp={(e) =>
+                      (e.currentTarget.style.transform = "scale(1)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.transform = "scale(1)")
+                    }
+                  >
+                    {buttonText || "Check Availability"}
+                  </button>
+                </BlockStack>
               </div>
+
               <div className="tip-wrapper">
                 <BlockStack gap="100">
                   <Text
@@ -165,14 +250,8 @@ export function PersonalizerTab({
                     tone="subdued"
                     alignment="center"
                   >
-                    This widget will appear directly below your "Add to Cart"
-                    button.
-                  </Text>
-                  <Text as="p" variant="bodySm" alignment="center">
-                    <Text as="span" fontWeight="bold" tone="success">
-                      Pro Tip:
-                    </Text>{" "}
-                    Reduce font size to fit long text in one line!
+                    This widget will appear on your storefront via the theme app
+                    block.
                   </Text>
                 </BlockStack>
               </div>

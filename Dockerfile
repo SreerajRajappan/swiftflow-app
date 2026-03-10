@@ -7,6 +7,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+ARG SHOPIFY_API_KEY
+ENV SHOPIFY_API_KEY=c51a636b3f088fcdb03a770d4ee64992
+
 COPY package.json package-lock.json* ./
 
 RUN npm ci --omit=dev && npm cache clean --force

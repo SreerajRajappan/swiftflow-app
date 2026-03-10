@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 import {
   Layout,
   BlockStack,
@@ -9,6 +10,9 @@ import {
   Button,
   Box,
   IndexTable,
+  TextField,
+  Divider,
+  InlineGrid,
 } from "@shopify/polaris";
 import {
   ProductIcon,
@@ -18,6 +22,8 @@ import {
 } from "@shopify/polaris-icons";
 
 interface RevenueSuiteProps {
+  data: any;
+  fetcher: any;
   totalRevenue: number;
   dailyGoal: number;
   goalProgress: string;
@@ -33,6 +39,8 @@ interface RevenueSuiteProps {
 }
 
 export function RevenueSuiteTab({
+  data,
+  fetcher,
   totalRevenue,
   dailyGoal,
   goalProgress,
@@ -45,10 +53,43 @@ export function RevenueSuiteTab({
   shop,
   onResetData,
 }: RevenueSuiteProps) {
+  // Claude's Local State for Email & A/B Testing
+  const [subject, setSubject] = useState(
+    data?.recoveryEmailSubject || "Good news! We deliver to you!",
+  );
+  const [body, setBody] = useState(
+    data?.recoveryEmailBody ||
+      "You left something behind! We deliver directly to your area. Come back and complete your order.",
+  );
+  const [abEnabled, setAbEnabled] = useState(data?.abTestEnabled || false);
+  const [msgA, setMsgA] = useState(
+    data?.abTestMessageA || "We deliver to your area!",
+  );
+  const [msgB, setMsgB] = useState(
+    data?.abTestMessageB || "Fast local delivery available!",
+  );
+
+  const isLocalSaving =
+    fetcher.state === "submitting" &&
+    fetcher.formData?.get("intent") === "save-suite-config";
+
+  const handleSaveConfig = useCallback(() => {
+    const form = new FormData();
+    form.append("intent", "save-suite-config");
+    form.append("recoveryEmailSubject", subject);
+    form.append("recoveryEmailBody", body);
+    form.append("abTestEnabled", String(abEnabled));
+    form.append("abTestMessageA", msgA);
+    form.append("abTestMessageB", msgB);
+    fetcher.submit(form, { method: "post" });
+  }, [subject, body, abEnabled, msgA, msgB, fetcher]);
+
   return (
     <Layout>
+      {/* LEFT COLUMN: Main Controls & Stats */}
       <Layout.Section>
         <BlockStack gap="400">
+          {/* YOUR DAILY GOAL */}
           <Card>
             <BlockStack gap="200">
               <InlineStack align="space-between">
@@ -80,13 +121,14 @@ export function RevenueSuiteTab({
             </BlockStack>
           </Card>
 
+          {/* YOUR MASTER TOGGLE */}
           <Card>
             <BlockStack gap="400">
               <InlineStack align="space-between">
                 <InlineStack gap="200">
                   <Icon source={ProductIcon} tone="base" />
                   <Text as="h2" variant="headingMd">
-                    Social Proof Master Control
+                    Revenue Suite Master Control
                   </Text>
                 </InlineStack>
                 <Badge tone={isEnabled ? "success" : "critical"}>
@@ -104,6 +146,7 @@ export function RevenueSuiteTab({
             </BlockStack>
           </Card>
 
+          {/* YOUR STAT BOXES */}
           <Card>
             <BlockStack gap="500">
               <InlineStack align="space-between">
@@ -150,6 +193,7 @@ export function RevenueSuiteTab({
             </BlockStack>
           </Card>
 
+          {/* YOUR RECENT CONVERSIONS (Fixed Schema Mapping) */}
           <Card padding="0">
             <Box padding="400">
               <Text as="h2" variant="headingMd">
@@ -161,7 +205,7 @@ export function RevenueSuiteTab({
               itemCount={recentConversions.length}
               headings={[
                 { title: "Date" },
-                { title: "Product ID" },
+                { title: "Order ID" },
                 { title: "Revenue", alignment: "end" },
               ]}
               selectable={false}
@@ -176,18 +220,106 @@ export function RevenueSuiteTab({
                     {new Date(conv.createdAt).toLocaleTimeString()}
                   </IndexTable.Cell>
                   <IndexTable.Cell>
-                    {conv.productId?.split("/").pop() || "N/A"}
+                    {conv.orderId?.split("/").pop() || "N/A"}
                   </IndexTable.Cell>
                   <IndexTable.Cell>
                     <div style={{ textAlign: "right" }}>
                       <Text as="span" fontWeight="bold" tone="success">
-                        +${conv.amount.toFixed(2)}
+                        +${conv.orderValue.toFixed(2)}
                       </Text>
                     </div>
                   </IndexTable.Cell>
                 </IndexTable.Row>
               ))}
             </IndexTable>
+          </Card>
+        </BlockStack>
+      </Layout.Section>
+
+      {/* RIGHT COLUMN: Claude's Configuration Features */}
+      <Layout.Section variant="oneThird">
+        <BlockStack gap="400">
+          {/* CLAUDE'S EMAIL CONFIG */}
+          <Card>
+            <BlockStack gap="400">
+              <Text as="h2" variant="headingMd">
+                Recovery Email Copy
+              </Text>
+              <Divider />
+              <TextField
+                label="Email Subject"
+                value={subject}
+                onChange={setSubject}
+                autoComplete="off"
+              />
+              <TextField
+                label="Email Body"
+                value={body}
+                onChange={setBody}
+                multiline={4}
+                autoComplete="off"
+                helpText="Use plain text. The customer's exact cart will be appended by the AI automatically."
+              />
+              <Button
+                variant="primary"
+                loading={isLocalSaving}
+                onClick={handleSaveConfig}
+              >
+                Save Configuration
+              </Button>
+            </BlockStack>
+          </Card>
+
+          {/* CLAUDE'S A/B TESTING */}
+          <Card>
+            <BlockStack gap="400">
+              <InlineStack align="space-between" blockAlign="center">
+                <Text as="h2" variant="headingMd">
+                  A/B Testing
+                </Text>
+                <Badge tone={abEnabled ? "success" : "attention"}>
+                  {abEnabled ? "Active" : "Inactive"}
+                </Badge>
+              </InlineStack>
+              <Divider />
+              <Text as="p" tone="subdued" variant="bodySm">
+                Test two delivery messages. Customers will randomly see one
+                variant.
+              </Text>
+
+              <Button
+                variant={abEnabled ? "primary" : "secondary"}
+                onClick={() => setAbEnabled(!abEnabled)}
+              >
+                {abEnabled ? "Disable A/B Testing" : "Enable A/B Testing"}
+              </Button>
+
+              <InlineGrid columns={2} gap="400">
+                <TextField
+                  label="Message A (50%)"
+                  value={msgA}
+                  onChange={setMsgA}
+                  autoComplete="off"
+                  disabled={!abEnabled}
+                />
+                <TextField
+                  label="Message B (50%)"
+                  value={msgB}
+                  onChange={setMsgB}
+                  autoComplete="off"
+                  disabled={!abEnabled}
+                />
+              </InlineGrid>
+
+              <Button
+                variant="primary"
+                loading={isLocalSaving}
+                onClick={handleSaveConfig}
+                disabled={!abEnabled}
+              >
+                Save A/B Test
+              </Button>
+            </BlockStack>
           </Card>
         </BlockStack>
       </Layout.Section>

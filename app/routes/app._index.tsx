@@ -2,75 +2,64 @@ import { useState, useCallback, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import confetti from "canvas-confetti";
 import {
+  json,
   useActionData,
   useLoaderData,
   useNavigate,
   useNavigation,
   useSubmit,
+  useFetcher,
 } from "@remix-run/react";
 import { Page, Tabs, Box, BlockStack } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { fireTestEmail } from "~/agent.server";
 import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "app/constants";
 
 // Import your modularized tab components
 import { PersonalizerTab } from "../components/PersonalizerTab";
-import { DeliveryTab } from "../components/DeliveryTab";
+import DeliveryTab from "../components/DeliveryTab";
 import { RevenueSuiteTab } from "../components/RevenueSuiteTab";
 import { InsightsTab } from "../components/InsightsTab";
+import { RevenueLeaksTab } from "../components/RevenueLeaksTab";
 
-// Utility: HEX to HSB
-function hexToHsb(hex: string) {
-  let h = hex.replace("#", "");
-  if (h.length === 3)
-    h = h
-      .split("")
-      .map((s) => s + s)
-      .join("");
-  const r = parseInt(h.substring(0, 2), 16) / 255;
-  const g = parseInt(h.substring(2, 4), 16) / 255;
-  const b = parseInt(h.substring(4, 6), 16) / 255;
-  const max = Math.max(r, g, b),
-    min = Math.min(r, g, b),
-    delta = max - min;
-  let hue = 0;
-  if (delta !== 0) {
-    if (max === r) hue = ((g - b) / delta) % 6;
-    else if (max === g) hue = (b - r) / delta + 2;
-    else hue = (r - g) / delta + 4;
-    hue = Math.round(hue * 60);
-    if (hue < 0) hue += 360;
+const LOCATION_QUERY = `#graphql
+  query GetPrimaryLocation {
+    locations(first: 1) {
+      edges {
+        node {
+          name
+          address { address1, city, province, countryCode, latitude, longitude }
+        }
+      }
+    }
   }
-  return { hue, saturation: max === 0 ? 0 : delta / max, brightness: max };
-}
+`;
+
+const METRIC_COUNTRIES = [
+  "CA",
+  "GB",
+  "AU",
+  "FR",
+  "DE",
+  "NL",
+  "SE",
+  "NO",
+  "DK",
+  "FI",
+  "JP",
+  "IN",
+  "BR",
+  "MX",
+];
 
 // LOADER: Fetches all data for all tabs
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session, billing } = await authenticate.admin(request);
   const shop = session.shop;
 
-  const shopResponse = await admin.graphql(
-    `#graphql
-  query getShopLocation {
-    locations(first: 10) { 
-      nodes {
-        name
-        address {
-          countryCode
-        }
-      }
-    }
-  }`,
-  );
-  const shopJson = await shopResponse.json();
-  const locationNodes = shopJson.data?.locations?.nodes || [];
-  const primaryLocation =
-    locationNodes.find((node: any) => node.name === "Shop location") ||
-    locationNodes[0];
-
-  const countryCode = primaryLocation?.address?.countryCode;
-  const unit = ["US", "MM", "LR"].includes(countryCode) ? "miles" : "km";
+  await fireTestEmail("sreerajrajapan@gmail.com");
 
   const billingCheck = await billing.check({
     plans: [MONTHLY_PLAN_PRO, MONTHLY_PLAN_BASIC],
@@ -82,7 +71,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   );
   const isPro = subscription?.name === MONTHLY_PLAN_PRO;
 
-  const settings = await prisma.appSettings.findUnique({ where: { shop } });
+  let settings = await prisma.appSettings.findUnique({ where: { shop } });
   const totalViews = await prisma.productView.count({ where: { shop } });
 
   const conversionData = await prisma.conversionEvent.aggregate({
@@ -100,6 +89,56 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const recentConversions = await prisma.conversionEvent.findMany({
     orderBy: { createdAt: "desc" },
     take: 5,
+  });
+
+  // --- NEW INSIGHTS MATH (From Claude) ---
+  const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const allConversions = await prisma.conversionEvent.findMany({
+    where: { shop, createdAt: { gte: last30Days } },
+  });
+  const badgeConversions = allConversions.filter(
+    (c) => c.source === "delivery_badge",
+  );
+  const recoveryConversions = allConversions.filter(
+    (c) => c.source === "cart_recovery",
+  );
+
+  const allChecks = await prisma.deliveryCheck.findMany({
+    where: { shop, timestamp: { gte: last30Days } },
+  });
+  const inRadiusCount = allChecks.filter((c) => c.inRadius).length;
+
+  const cartRecoveries = await prisma.cartRecovery.findMany({
+    where: { shop },
+  });
+  const emailsSent = cartRecoveries.filter((c) => c.emailSent).length;
+  const recovered = cartRecoveries.filter(
+    (c) => c.recovered && c.recoveredAt && c.recoveredAt >= last30Days,
+  );
+
+  const advancedStats = {
+    totalRevenue: allConversions.reduce((s, c) => s + c.orderValue, 0),
+    totalOrders: allConversions.length,
+    badgeRevenue: badgeConversions.reduce((s, c) => s + c.orderValue, 0),
+    badgeOrders: badgeConversions.length,
+    recoveryRevenue: recoveryConversions.reduce((s, c) => s + c.orderValue, 0),
+    recoveryOrders: recoveryConversions.length,
+    totalChecks: allChecks.length,
+    inRadiusCount,
+    conversionRate:
+      allChecks.length > 0 ? (inRadiusCount / allChecks.length) * 100 : 0,
+    emailsSent,
+    recoveredCount: recovered.length,
+    recoveredRevenue: recovered.reduce((s, c) => s + (c.recoveryValue ?? 0), 0),
+    recoveryRate: emailsSent > 0 ? (recovered.length / emailsSent) * 100 : 0,
+    status: "Test fired! Check your terminal and inbox.",
+  };
+
+  // Fetch Active Revenue Leaks for the Dashboard
+  const activeLeaks = await prisma.revenueLeak.findMany({
+    where: { shop },
+    orderBy: { createdAt: "desc" },
+    take: 20,
   });
 
   const trendingData = await prisma.productView.groupBy({
@@ -126,7 +165,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         const responseJson = await response.json();
         const product = responseJson.data?.product;
 
-        // FIXED: Removed broken aggregate for product sales (schema doesn't have productId on ConversionEvent)
         return {
           ...item,
           title: product?.title || "Unknown Product",
@@ -149,36 +187,67 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     trialDaysLeft = Math.max(0, trialLength - daysPassed);
   }
 
-  const response = await admin.graphql(
-    `#graphql
-    query getActiveFulfillmentLocation {
-      locations(first: 10, query: "ships_inventory:true") {
-        nodes {
-          name
-          shipsInventory
-          address {
-            latitude
-            longitude
-          }
-        }
+  // Auto-detect store location
+  let storeLat = settings?.storeLat ?? null;
+  let storeLng = settings?.storeLng ?? null;
+  let storeAddress = settings?.storeAddress ?? null;
+  let unitSystem = settings?.unitSystem ?? "IMPERIAL";
+  let locationWarning = false;
+
+  try {
+    const res = await admin.graphql(LOCATION_QUERY);
+    const body = await res.json();
+    const loc = body.data?.locations?.edges?.[0]?.node;
+
+    if (loc) {
+      if (loc.address.latitude && loc.address.longitude) {
+        storeLat = loc.address.latitude;
+        storeLng = loc.address.longitude;
+      }
+      storeAddress = [
+        loc.address.address1,
+        loc.address.city,
+        loc.address.province,
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      if (!settings?.hasCustomizedRadius) {
+        unitSystem = METRIC_COUNTRIES.includes(loc.address.countryCode)
+          ? "METRIC"
+          : "IMPERIAL";
       }
     }
-  `,
-  );
+  } catch (err) {
+    locationWarning = !storeLat;
+  }
 
-  const data = await response.json();
-  const locations = data.data.locations.nodes;
+  // Safely ensure settings exist AND return the updated settings object
+  if (!settings) {
+    const defaultRadius = unitSystem === "METRIC" ? 10.0 : 6.0;
+    settings = await prisma.appSettings.create({
+      data: {
+        shop,
+        deliveryRadius: defaultRadius,
+        unitSystem,
+        storeLat,
+        storeLng,
+        storeAddress,
+      },
+    });
+  } else if (storeLat && storeLng) {
+    settings = await prisma.appSettings.update({
+      where: { shop },
+      data: { storeLat, storeLng, storeAddress, unitSystem },
+    });
+  }
 
-  const activeHub = locations.find((node: any) => node.shipsInventory === true);
-
-  const lat = activeHub?.address?.latitude ?? 34.0549;
-  const lng = activeHub?.address?.longitude ?? -118.2437;
-
-  return {
-    shop,
+  return json({
     settings,
+    shop,
     totalViews,
     totalRevenue,
+    activeLeaks,
     conversionRate,
     recentConversions,
     dailyGoal,
@@ -186,72 +255,94 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     trendingProducts: enrichedProducts,
     isPro,
     trialDaysLeft,
-    unit,
-    googleMapsApiKey: process.env.SHOPIFY_GOOGLE_MAPS_KEY,
-    googleMapId: process.env.SHOPIFY_MAP_ID,
-    shopCoordinates: { lat, lng },
-  };
+    storeLat,
+    storeLng,
+    storeAddress,
+    unitSystem,
+    locationWarning,
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
+    googleMapId: process.env.GOOGLE_MAP_ID ?? "",
+    advancedStats,
+  });
 };
 
-// ACTION: Handles settings updates and data resets
+// ACTION: Handles settings updates and data resets securely via Intents
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
   const formData = await request.formData();
+  const intent = formData.get("intent");
 
-  if (formData.get("intent") === "reset_data") {
-    await prisma.conversionEvent.deleteMany({});
-    return { success: true, message: "Data reset successfully" };
+  // 1. Reset Data Action
+  if (intent === "reset_data") {
+    await prisma.conversionEvent.deleteMany({ where: { shop } });
+    return json({ success: true, message: "Data reset successfully" });
   }
 
-  const customText = formData.get("customText") as string;
-  const customColor = formData.get("customColor") as string;
-  const isEnabled = formData.get("isEnabled") === "true";
+  // 2. Map & Radius Save Action (Triggered specifically by DeliveryTab)
+  if (intent === "save-delivery") {
+    const deliveryRadius = parseFloat(formData.get("deliveryRadius") as string);
+    const unitSystem = formData.get("unitSystem") as string;
+    const recoveryEmailEnabled =
+      formData.get("recoveryEmailEnabled") === "true";
 
-  const fontSize = String(formData.get("fontSize") || "16");
+    if (isNaN(deliveryRadius) || deliveryRadius <= 0) {
+      return json({ error: "Invalid radius", intent }, { status: 400 });
+    }
 
-  const deliveryRadius = parseFloat(formData.get("deliveryRadius") as string);
-  const recoveryEnabled = formData.get("recoveryEnabled") === "true";
+    await prisma.appSettings.update({
+      where: { shop },
+      data: {
+        deliveryRadius,
+        unitSystem,
+        hasCustomizedRadius: true,
+        recoveryEmailEnabled,
+      },
+    });
 
-  const storeLat = parseFloat(formData.get("storeLat") as string);
-  const storeLng = parseFloat(formData.get("storeLng") as string);
+    return json({ success: true, intent });
+  }
 
-  await prisma.appSettings.upsert({
-    where: { shop },
-    update: {
-      headerText: customText,
-      headerColor: customColor,
-      revenueSuiteEnabled: isEnabled,
-      fontSize,
-      deliveryRadius,
-      recoveryEnabled,
-      hasCustomizedRadius: true,
-      storeLat,
-      storeLng,
-    },
-    create: {
-      shop,
-      headerText: customText,
-      headerColor: customColor,
-      revenueSuiteEnabled: isEnabled,
-      fontSize,
-      deliveryRadius,
-      recoveryEnabled,
-      hasCustomizedRadius: true,
-      storeLat,
-      storeLng,
-    },
-  });
+  // 3. Global Save Action (Triggered by the Top Bar Button)
+  if (intent === "save-global") {
+    const customText = formData.get("customText") as string;
+    const customColor = formData.get("customColor") as string;
+    const buttonText = formData.get("buttonText") as string;
+    const isEnabled = formData.get("isEnabled") === "true";
+    const fontSize = String(formData.get("fontSize") || "16");
+    const recoveryEmailEnabled =
+      formData.get("recoveryEmailEnabled") === "true";
 
-  return { success: true };
+    await prisma.appSettings.update({
+      where: { shop },
+      data: {
+        headerText: customText,
+        headerColor: customColor,
+        buttonText: buttonText,
+        revenueSuiteEnabled: isEnabled,
+        fontSize,
+        recoveryEmailEnabled,
+      },
+    });
+
+    return json({
+      success: true,
+      intent: "save-global",
+      message: "Global settings saved",
+    });
+  }
+
+  return json({ error: "Unknown intent" }, { status: 400 });
 };
 
 export default function Index() {
   const shopify = useAppBridge();
+  const data = useLoaderData<typeof loader>();
   const {
     shop,
     settings,
     totalViews,
+    activeLeaks,
     trendingProducts,
     isPro,
     trialDaysLeft,
@@ -260,34 +351,26 @@ export default function Index() {
     dailyGoal,
     goalProgress,
     recentConversions,
-    unit,
-    googleMapsApiKey,
-    googleMapId,
-    shopCoordinates,
-  } = useLoaderData<typeof loader>();
+  } = data;
+
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
+  const deliveryFetcher = useFetcher();
   const isSaving = useNavigation().state === "submitting";
   const navigate = useNavigate();
 
   const [selectedTab, setSelectedTab] = useState(0);
 
+  // Use the explicitly returned `settings` object to initialize state!
   const [fontSize, setFontSize] = useState(Number(settings?.fontSize) || 16);
-  const [deliveryRadius, setDeliveryRadius] = useState(() => {
-    if (settings?.hasCustomizedRadius) {
-      return Number(settings.deliveryRadius);
-    }
-    return unit === "miles" ? 6 : 10;
-  });
-
-  const [recoveryEnabled, setRecoveryEnabled] = useState(
-    settings?.recoveryEnabled || false,
+  const [recoveryEmailEnabled, setrecoveryEmailEnabled] = useState(
+    settings?.recoveryEmailEnabled || false,
   );
-
   const [customText, setCustomText] = useState(settings?.headerText || "");
-  const [color, setColor] = useState(
-    hexToHsb(settings?.headerColor || "#5c6ac4"),
+  const [buttonText, setButtonText] = useState(
+    settings?.buttonText || "Check Availability",
   );
+  const [hexColor, setHexColor] = useState(settings?.headerColor || "#5c6ac4"); // <--- CHANGED
   const [isEnabled, setIsEnabled] = useState(
     settings?.revenueSuiteEnabled ?? true,
   );
@@ -301,20 +384,21 @@ export default function Index() {
     { id: "personalizer", content: "Personalizer" },
     { id: "delivery", content: "Delivery" },
     { id: "revenue", content: "Revenue Suite" },
+    { id: "leaks", content: "Revenue Leaks" },
     { id: "insights", content: "Insights" },
   ];
 
+  // The global save button now safely sends "save-global" intent
   const handleSave = () => {
     submit(
       {
+        intent: "save-global",
         customText,
-        customColor: hsbToHex(color),
+        customColor: hexColor,
+        buttonText,
         isEnabled: String(isEnabled),
         fontSize: String(fontSize),
-        deliveryRadius: String(deliveryRadius),
-        recoveryEnabled: String(recoveryEnabled),
-        storeLat: String(shopCoordinates.lat),
-        storeLng: String(shopCoordinates.lng),
+        recoveryEmailEnabled: String(recoveryEmailEnabled),
       },
       { method: "POST" },
     );
@@ -330,7 +414,13 @@ export default function Index() {
     const newState = !isEnabled;
     setIsEnabled(newState);
     submit(
-      { customText, customColor: hsbToHex(color), isEnabled: String(newState) },
+      {
+        intent: "save-global",
+        customText,
+        customColor: hexColor, // <--- CHANGED
+        buttonText, // <--- NEW
+        isEnabled: String(newState),
+      },
       { method: "POST" },
     );
   };
@@ -342,12 +432,17 @@ export default function Index() {
   }, [goalProgress, selectedTab]);
 
   useEffect(() => {
-    if (actionData?.success) {
+    if (actionData && "success" in actionData && actionData.success) {
       const message =
         "message" in actionData
           ? actionData.message
           : "Settings saved successfully";
       shopify?.toast?.show(message as string, { duration: 3000 });
+    } else if (actionData && "error" in actionData) {
+      shopify?.toast?.show(String(actionData.error), {
+        duration: 3000,
+        isError: true,
+      });
     }
   }, [actionData, shopify]);
 
@@ -369,9 +464,10 @@ export default function Index() {
                 isSaving={isSaving}
                 customText={customText}
                 setCustomText={setCustomText}
-                color={color}
-                setColor={setColor}
-                hexColor={hsbToHex(color)}
+                buttonText={buttonText}
+                setButtonText={setButtonText}
+                hexColor={hexColor}
+                setHexColor={setHexColor}
                 handleSave={handleSave}
                 navigate={navigate}
                 fontSize={fontSize}
@@ -381,23 +477,16 @@ export default function Index() {
             {selectedTab === 1 && (
               <DeliveryTab
                 isPro={isPro}
-                deliveryRadius={deliveryRadius}
-                setDeliveryRadius={setDeliveryRadius}
-                recoveryEnabled={recoveryEnabled}
-                setRecoveryEnabled={setRecoveryEnabled}
-                isSaving={isSaving}
-                unit={unit as "miles" | "km"}
-                handleSave={handleSave}
-                navigate={navigate}
-                googleMapsApiKey={googleMapsApiKey ?? ""}
-                googleMapId={googleMapId ?? ""}
-                shopCoordinates={
-                  shopCoordinates as { lat: number; lng: number }
-                }
+                data={data}
+                fetcher={deliveryFetcher}
+                recoveryEmailEnabled={recoveryEmailEnabled}
+                setrecoveryEmailEnabled={setrecoveryEmailEnabled}
               />
             )}
             {selectedTab === 2 && (
               <RevenueSuiteTab
+                data={settings}
+                fetcher={deliveryFetcher}
                 totalRevenue={totalRevenue}
                 dailyGoal={dailyGoal}
                 goalProgress={goalProgress}
@@ -412,51 +501,18 @@ export default function Index() {
                 onResetData={onResetData}
               />
             )}
-            {selectedTab === 3 && (
-              <InsightsTab isPro={isPro} trendingProducts={trendingProducts} />
+            {selectedTab === 3 && <RevenueLeaksTab leaks={activeLeaks} />}
+            {selectedTab === 4 && (
+              <InsightsTab
+                isPro={isPro}
+                trendingProducts={trendingProducts}
+                recentConversions={recentConversions}
+                stats={data.advancedStats}
+              />
             )}
           </Box>
         </Tabs>
       </BlockStack>
     </Page>
   );
-}
-
-function hsbToHex(color: {
-  hue: number;
-  saturation: number;
-  brightness: number;
-}) {
-  const { hue, saturation, brightness } = color;
-  const chroma = brightness * saturation;
-  const huePrime = hue / 60;
-  const x = chroma * (1 - Math.abs((huePrime % 2) - 1));
-  const m = brightness - chroma;
-  let r = 0,
-    g = 0,
-    b = 0;
-  if (huePrime >= 0 && huePrime < 1) {
-    r = chroma;
-    g = x;
-  } else if (huePrime >= 1 && huePrime < 2) {
-    r = x;
-    g = chroma;
-  } else if (huePrime >= 2 && huePrime < 3) {
-    g = chroma;
-    b = x;
-  } else if (huePrime >= 3 && huePrime < 4) {
-    g = x;
-    b = chroma;
-  } else if (huePrime >= 4 && huePrime < 5) {
-    r = x;
-    b = chroma;
-  } else if (huePrime >= 5 && huePrime < 6) {
-    r = chroma;
-    b = x;
-  }
-  const toHex = (n: number) =>
-    Math.round((n + m) * 255)
-      .toString(16)
-      .padStart(2, "0");
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }

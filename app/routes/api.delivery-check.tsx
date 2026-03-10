@@ -1,55 +1,78 @@
 import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
+import { geocodeAddress } from "../services/geocoding.server";
+import {
+  calculateDistance,
+  getRadiusInMiles,
+  estimateDeliveryTime,
+} from "../services/proximity.server";
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Add CORS headers
-  const headers = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  };
+  // --- REMIX CORS FIX ---
+  // Handle the browser's preflight OPTIONS request correctly
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS });
+  }
 
   const url = new URL(request.url);
   const shop = url.searchParams.get("shop");
   const lat = url.searchParams.get("lat");
   const lng = url.searchParams.get("lng");
+  const address = url.searchParams.get("address");
+  const cartToken = url.searchParams.get("cartToken");
 
   if (!shop) {
-    return json({ error: "Shop parameter required" }, { status: 400, headers });
+    return json({ error: "Missing shop" }, { status: 400, headers: CORS });
   }
 
   try {
-    const settings = await db.appSettings.findFirst({
-      where: { shop },
-    });
+    const settings = await db.appSettings.findFirst({ where: { shop } });
 
-    if (!settings || !settings.storeLat || !settings.storeLng) {
+    if (!settings?.storeLat || !settings?.storeLng) {
       return json(
         { inRadius: false, error: "Store location not configured" },
-        { headers },
+        { headers: CORS },
       );
     }
 
-    // If no customer location provided, can't check
-    if (!lat || !lng) {
+    // Resolve customer coordinates
+    let customerLat: number | null = null;
+    let customerLng: number | null = null;
+    let resolvedAddress: string | null = address;
+
+    // 1. Try direct coordinates first
+    if (lat && lng) {
+      const parsedLat = parseFloat(lat);
+      const parsedLng = parseFloat(lng);
+      if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+        customerLat = parsedLat;
+        customerLng = parsedLng;
+      }
+    }
+
+    // 2. Fallback: geocode the address string
+    if ((customerLat === null || customerLng === null) && address) {
+      const coords = await geocodeAddress(address);
+      if (coords) {
+        customerLat = coords.lat;
+        customerLng = coords.lng;
+      }
+    }
+
+    if (customerLat === null || customerLng === null) {
       return json(
-        { inRadius: false, error: "Customer location required" },
-        { headers },
+        { inRadius: false, error: "Could not determine customer location" },
+        { headers: CORS },
       );
     }
 
-    const customerLat = parseFloat(lat);
-    const customerLng = parseFloat(lng);
-
-    if (isNaN(customerLat) || isNaN(customerLng)) {
-      return json(
-        { inRadius: false, error: "Invalid coordinates" },
-        { headers },
-      );
-    }
-
-    // Calculate distance
     const distance = calculateDistance(
       settings.storeLat,
       settings.storeLng,
@@ -57,75 +80,56 @@ export async function loader({ request }: LoaderFunctionArgs) {
       customerLng,
     );
 
-    const radiusInMiles =
-      settings.unitSystem === "IMPERIAL"
-        ? settings.deliveryRadius
-        : settings.deliveryRadius * 0.621371;
-
+    const radiusInMiles = getRadiusInMiles(
+      settings.deliveryRadius,
+      settings.unitSystem,
+    );
     const inRadius = distance <= radiusInMiles;
+
+    // Determine message (A/B test or default)
+    let message: string;
+    let abVariant: string | null = null;
+
+    if (settings.abTestEnabled) {
+      abVariant = Math.random() < 0.5 ? "A" : "B";
+      message =
+        abVariant === "A" ? settings.abTestMessageA : settings.abTestMessageB;
+    } else {
+      message = inRadius
+        ? `Great news! We deliver to your area (${distance.toFixed(1)} mi away)`
+        : "Sorry, you're outside our current delivery zone";
+    }
+
+    const estimatedTime = inRadius ? estimateDeliveryTime(distance) : null;
 
     // Log the check
     await db.deliveryCheck.create({
       data: {
-        shop: settings.shop,
+        shop,
+        customerAddress: resolvedAddress,
         customerLat,
         customerLng,
         distance,
         inRadius,
+        cartToken: cartToken || null,
       },
     });
 
     return json(
       {
         inRadius,
-        distance: distance.toFixed(2),
-        message: inRadius
-          ? `Great news! We deliver to your area (${distance.toFixed(1)} miles away)`
-          : "Sorry, you're outside our delivery zone",
+        distance: parseFloat(distance.toFixed(2)),
+        message,
+        estimatedTime,
+        abVariant,
       },
-      { headers },
+      { headers: CORS },
     );
-  } catch (error) {
-    console.error("Delivery check error:", error);
+  } catch (err) {
+    console.error("[DeliveryCheck] Error:", err);
     return json(
-      { error: "Server error", inRadius: false },
-      { status: 500, headers },
+      { inRadius: false, error: "Server error" },
+      { status: 500, headers: CORS },
     );
   }
-}
-
-export async function options() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
-}
-
-function calculateDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const R = 3959; // Earth radius in miles
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) *
-      Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-function toRad(degrees: number): number {
-  return degrees * (Math.PI / 180);
 }

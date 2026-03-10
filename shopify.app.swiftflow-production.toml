@@ -1,0 +1,34 @@
+# Production Configuration for SwiftFlow
+client_id = "0d40a8f7944ea05b2170a6853a984afb"
+name = "SwiftFlow: Revenue Suite"
+application_url = "https://swiftflow.logiclooms.io"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/uninstalled" ]
+  uri = "/webhooks/app/uninstalled"
+
+[access_scopes]
+scopes = "read_locations,write_orders,read_customers,write_app_proxy,write_products,read_cart_transforms"
+
+[auth]
+redirect_urls = [
+  "https://swiftflow-app.fly.dev/auth/callback",
+  "https://swiftflow-app.fly.dev/auth/shopify/callback",
+  "https://swiftflow-app.fly.dev/api/auth/callback"
+]
+
+[app_proxy]
+url = "https://swiftflow-app.fly.dev"
+subpath = "swiftflow-revenue"
+prefix = "apps"

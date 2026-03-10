@@ -5,19 +5,16 @@ name = "SwiftFlow: Revenue Suite"
 application_url = "https://swiftflow-app.fly.dev"
 embedded = true
 
-[build]
-automatically_update_urls_on_dev = true
-
 [webhooks]
 api_version = "2026-04"
 
   [[webhooks.subscriptions]]
-  topics = [ "app/scopes_update" ]
-  uri = "/webhooks/app/scopes_update"
-
-  [[webhooks.subscriptions]]
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
+
+  [[webhooks.subscriptions]]
+  topics = [ "app/scopes_update" ]
+  uri = "/webhooks/app/scopes_update"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
@@ -34,3 +31,6 @@ redirect_urls = [
 url = "https://swiftflow-app.fly.dev/api/proxy"
 subpath = "swiftflow-revenue"
 prefix = "apps"
+
+[build]
+automatically_update_urls_on_dev = true

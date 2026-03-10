@@ -2,116 +2,130 @@ import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { geocodeAddress } from "../services/geocoding.server";
+import {
+  calculateDistance,
+  getRadiusInMiles,
+} from "../services/proximity.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  const { topic, shop, payload } = await authenticate.webhook(request);
-
-  if (topic !== "CARTS_UPDATE") {
-    return json({ error: "Invalid topic" }, { status: 400 });
-  }
-
   try {
-    const cart = payload as any;
+    const { topic, shop, payload } = await authenticate.webhook(request);
 
-    if (!cart.token || !cart.email) {
-      return json({ success: true, skipped: "No customer data" });
+    // Security Guard
+    if (topic !== "CARTS_UPDATE") {
+      return new Response("Unhandled webhook topic", { status: 200 });
     }
 
-    const shippingAddress = cart.shipping_address;
-    if (!shippingAddress) {
-      return json({ success: true, skipped: "No shipping address" });
+    if (!payload || !shop) {
+      return json({ error: "Invalid webhook" }, { status: 400 });
     }
 
-    const settings = await db.appSettings.findFirst({
-      where: { shop },
-    });
+    const cart = payload as Record<string, any>;
+    const cartToken = (cart.token as string | undefined) ?? null;
+    const customerEmail = (cart.email as string | undefined) ?? null;
+    const shippingAddress = cart.shipping_address as Record<
+      string,
+      string
+    > | null;
+    const cartValue = parseFloat(cart.total_price ?? "0");
 
-    if (!settings || !settings.recoveryEnabled) {
-      return json({ success: true, skipped: "Recovery disabled" });
+    // --- VITAL FOR AI AGENT: Harvest the exact cart contents ---
+    const lineItems = cart.line_items || [];
+
+    if (!cartToken) {
+      return json({ success: true, skipped: "no_cart_token" });
     }
 
-    const address = `${shippingAddress.address1}, ${shippingAddress.city}, ${shippingAddress.zip}`;
-    const customerCoords = await geocodeAddress(address);
-    if (!customerCoords) {
-      return json({ success: true, skipped: "Geocoding failed" });
+    const settings = await db.appSettings.findFirst({ where: { shop } });
+
+    if (!settings?.revenueSuiteEnabled) {
+      return json({ success: true, skipped: "suite_disabled" });
     }
 
-    const distance = calculateDistance(
-      settings.storeLat || 0,
-      settings.storeLng || 0,
-      customerCoords.lat,
-      customerCoords.lng,
-    );
+    if (!settings.storeLat || !settings.storeLng) {
+      return json({ success: true, skipped: "store_location_missing" });
+    }
 
-    const radiusInMiles =
-      settings.unitSystem === "IMPERIAL"
-        ? settings.deliveryRadius
-        : settings.deliveryRadius * 0.621371;
+    // Resolve customer coordinates
+    let customerLat: number | null = null;
+    let customerLng: number | null = null;
+    let customerAddress: string | null = null;
+    let inDeliveryZone = false;
+    let distance: number | null = null;
 
-    const inDeliveryZone = distance <= radiusInMiles;
-    const cartValue = parseFloat(cart.total_price || "0");
+    if (shippingAddress) {
+      customerAddress = [
+        shippingAddress.address1,
+        shippingAddress.city,
+        shippingAddress.province,
+        shippingAddress.zip,
+        shippingAddress.country,
+      ]
+        .filter(Boolean)
+        .join(", ");
 
+      const coords = await geocodeAddress(customerAddress);
+
+      if (coords) {
+        customerLat = coords.lat;
+        customerLng = coords.lng;
+        distance = calculateDistance(
+          settings.storeLat,
+          settings.storeLng,
+          customerLat,
+          customerLng,
+        );
+        const radiusMiles = getRadiusInMiles(
+          settings.deliveryRadius,
+          settings.unitSystem,
+        );
+        inDeliveryZone = distance <= radiusMiles;
+      }
+    }
+
+    // Determine A/B variant for this cart (Claude's addition)
+    const abTestVariant = settings.abTestEnabled
+      ? Math.random() < 0.5
+        ? "A"
+        : "B"
+      : null;
+
+    // Upsert cart recovery record - quietly queueing it for the AI Agent
     await db.cartRecovery.upsert({
-      where: { cartToken: cart.token },
+      where: { cartToken },
       update: {
-        customerEmail: cart.email,
-        customerAddress: address,
+        customerEmail,
+        customerAddress,
+        customerLat,
+        customerLng,
         inDeliveryZone,
+        cartValue,
+        lineItems, // Update the product context in case they added more items
+        updatedAt: new Date(),
       },
       create: {
         shop,
-        cartToken: cart.token,
-        customerEmail: cart.email,
-        customerAddress: address,
+        cartToken,
+        customerEmail,
+        customerAddress,
+        customerLat,
+        customerLng,
         inDeliveryZone,
+        cartValue,
+        lineItems, // Save the product context for the AI Agent
+        abTestVariant,
         recoveryValue: cartValue,
+        agentStatus: "IDLE", // Explicitly mark as ready for the background engine
       },
     });
 
-    if (inDeliveryZone && cartValue > 50) {
-      console.log(
-        `Would send recovery email to ${cart.email} for cart ${cart.token}`,
-      );
-      await db.cartRecovery.update({
-        where: { cartToken: cart.token },
-        data: { emailSent: true },
-      });
-    }
+    // NOTE: Synchronous email sending removed to comply with Shopify's 5-second timeout rule.
+    // The AI Agent in the cron job will handle this safely!
 
     return json({ success: true, inDeliveryZone });
-  } catch (error) {
-    console.error("Cart webhook error:", error);
+  } catch (err) {
+    console.error("[Webhook:carts/update]", err);
     return json({ error: "Processing failed" }, { status: 500 });
   }
-}
-
-function calculateDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const R = 3959;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) *
-      Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
-
-async function geocodeAddress(
-  address: string,
-): Promise<{ lat: number; lng: number } | null> {
-  const apiKey = process.env.SHOPIFY_GOOGLE_MAPS_KEY;
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
-    if (data.results?.[0]) return data.results[0].geometry.location;
-  } catch (error) {}
-  return null;
 }

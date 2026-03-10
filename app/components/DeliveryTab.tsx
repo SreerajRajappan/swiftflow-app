@@ -1,362 +1,277 @@
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Box,
+  Layout,
   Card,
   BlockStack,
   InlineStack,
   Text,
-  Button,
   RangeSlider,
-  Icon,
-  Checkbox,
-  Divider,
-  List,
+  Select,
+  Button,
   Banner,
+  Badge,
+  Box,
   Spinner,
+  Checkbox, // <-- Added back for Cart Recovery
 } from "@shopify/polaris";
-import {
-  LocationIcon,
-  LockIcon,
-  OrderIcon,
-  SaveIcon,
-} from "@shopify/polaris-icons";
-import { useEffect, useRef, useState } from "react";
 
-interface DeliveryTabProps {
-  isPro: boolean;
-  deliveryRadius: number;
-  setDeliveryRadius: (value: number) => void;
-  unit: "miles" | "km";
-  navigate: (url: string) => void;
-  recoveryEnabled: boolean;
-  setRecoveryEnabled: (value: boolean) => void;
-  isSaving: boolean;
-  handleSave: () => void;
-  googleMapsApiKey: string;
-  googleMapId: string;
-  shopCoordinates: { lat: number; lng: number };
-}
-
-export function DeliveryTab({
+export default function DeliveryTab({
+  data,
+  fetcher,
   isPro,
-  deliveryRadius,
-  setDeliveryRadius,
-  unit,
-  navigate,
-  recoveryEnabled,
-  setRecoveryEnabled,
-  isSaving,
-  handleSave,
-  googleMapsApiKey,
-  googleMapId,
-  shopCoordinates,
-}: DeliveryTabProps) {
-  const [showBanner, setShowBanner] = useState(true);
-  const [isLoadingMap, setIsLoadingMap] = useState(true);
-  const isMetric = unit === "km";
-  const maxRange = isMetric ? 50 : 30;
-  const stepSize = isMetric ? 1 : 0.5;
-
-  const isFallback =
-    shopCoordinates.lat === 34.0549 && shopCoordinates.lng === -118.2437;
+  recoveryEmailEnabled,
+  setrecoveryEmailEnabled,
+}: {
+  data: any;
+  fetcher: any;
+  isPro: boolean;
+  recoveryEmailEnabled: boolean;
+  setrecoveryEmailEnabled: (val: boolean) => void;
+}) {
+  const [radius, setRadius] = useState(data.deliveryRadius || 6);
+  const [unitSystem, setUnitSystem] = useState(data.unitSystem || "IMPERIAL");
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState(false);
 
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<google.maps.Map | null>(null);
-  const circleInstance = useRef<google.maps.Circle | null>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const circleRef = useRef<any>(null);
+
+  const radiusInMeters =
+    unitSystem === "IMPERIAL" ? radius * 1609.34 : radius * 1000;
 
   useEffect(() => {
-    if (!isPro || !mapRef.current || !googleMapsApiKey) return;
-
-    const loadScript = () => {
-      if (window.google && window.google.maps) {
-        initMap();
-        return;
-      }
-
-      // 2. Prevent double-injection
-      const existingScript = document.getElementById("google-maps-script");
-      if (existingScript) return;
-
-      const script = document.createElement("script");
-      script.id = "google-maps-script";
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&v=weekly`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => initMap();
-      document.head.appendChild(script);
-    };
+    if (!data.googleMapsApiKey || !data.storeLat || !data.storeLng) return;
 
     async function initMap() {
       try {
-        // 3. Destructure specifically from the library call
-        const { Map, Circle } = (await window.google.maps.importLibrary(
+        if (!(window as any).google?.maps?.importLibrary) {
+          await new Promise<void>((resolve, reject) => {
+            const existing = document.querySelector("script[data-gmaps]");
+            if (existing) {
+              resolve();
+              return;
+            }
+            const script = document.createElement("script");
+            script.setAttribute("data-gmaps", "true");
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${data.googleMapsApiKey}&loading=async`;
+            script.async = true;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error("Maps load failed"));
+            document.head.appendChild(script);
+          });
+        }
+
+        const { Map, Circle } = await (window as any).google.maps.importLibrary(
           "maps",
-        )) as google.maps.MapsLibrary;
+        );
 
-        const center = {
-          lat: Number(shopCoordinates.lat),
-          lng: Number(shopCoordinates.lng),
-        };
+        if (!mapRef.current) return;
 
-        if (!mapInstance.current && mapRef.current) {
-          mapInstance.current = new Map(mapRef.current, {
-            center,
-            zoom: 11,
-            disableDefaultUI: true,
-            zoomControl: true,
-            mapId: googleMapId || "DEMO_MAP_ID",
-          });
-        }
+        const center = { lat: data.storeLat, lng: data.storeLng };
 
-        const effectiveRadius =
-          unit === "miles" && deliveryRadius === 10 ? 6 : deliveryRadius;
+        mapInstanceRef.current = new Map(mapRef.current, {
+          center,
+          zoom: 11,
+          mapId: data.googleMapId || undefined,
+          disableDefaultUI: false,
+        });
 
-        const radiusInMeters =
-          unit === "miles" ? effectiveRadius * 1609.34 : effectiveRadius * 1000;
+        circleRef.current = new Circle({
+          map: mapInstanceRef.current,
+          center,
+          radius: radiusInMeters,
+          fillColor: "#008060",
+          fillOpacity: 0.15,
+          strokeColor: "#008060",
+          strokeOpacity: 0.85,
+          strokeWeight: 2,
+        });
 
-        if (circleInstance.current) {
-          circleInstance.current.setRadius(radiusInMeters);
-          circleInstance.current.setCenter(center);
-        } else if (mapInstance.current) {
-          circleInstance.current = new Circle({
-            strokeColor: "#008060",
-            strokeOpacity: 0.8,
-            strokeWeight: 2,
-            fillColor: "#008060",
-            fillOpacity: 0.15,
-            map: mapInstance.current,
-            center,
-            radius: radiusInMeters,
-          });
-        }
-        setIsLoadingMap(false);
-      } catch (error) {
-        console.error("Map initialization error:", error);
-        setIsLoadingMap(false);
+        setMapReady(true);
+      } catch (err) {
+        console.error("[Map] Init error:", err);
+        setMapError(true);
       }
     }
 
-    loadScript();
-  }, [
-    isPro,
-    googleMapsApiKey,
-    shopCoordinates,
-    googleMapId,
-    deliveryRadius,
-    unit,
-  ]);
+    initMap();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.storeLat, data.storeLng, data.googleMapsApiKey, data.googleMapId]);
+
+  useEffect(() => {
+    if (!circleRef.current) return;
+    const meters = unitSystem === "IMPERIAL" ? radius * 1609.34 : radius * 1000;
+    circleRef.current.setRadius(meters);
+  }, [radius, unitSystem]);
+
+  const handleSave = useCallback(() => {
+    const form = new FormData();
+    form.append("intent", "save-delivery");
+    form.append("deliveryRadius", String(radius));
+    form.append("unitSystem", unitSystem);
+    form.append("recoveryEmailEnabled", String(recoveryEmailEnabled)); // <-- Ensure it saves here
+    fetcher.submit(form, { method: "post" });
+  }, [radius, unitSystem, recoveryEmailEnabled, fetcher]);
+
+  const unit = unitSystem === "IMPERIAL" ? "miles" : "km";
+  const maxRadius = unitSystem === "IMPERIAL" ? 25 : 40;
+
+  const isSaving =
+    fetcher.state === "submitting" &&
+    fetcher.formData?.get("intent") === "save-delivery";
+  const saved =
+    fetcher.data?.intent === "save-delivery" && fetcher.data?.success;
+  const hasError =
+    fetcher.data?.intent === "save-delivery" && fetcher.data?.error;
 
   return (
-    <Box paddingBlockStart="400" paddingBlockEnd="800">
-      <BlockStack gap="400">
-        {isPro && showBanner && (
-          <Banner
-            title={
-              isFallback
-                ? "Location Coordinates Not Found"
-                : "Verify Your Delivery Center"
-            }
-            tone={isFallback ? "warning" : "info"}
-            icon={LocationIcon}
-            onDismiss={() => setShowBanner(false)}
-          >
-            <Text as="p">
-              {isFallback
-                ? "Shopify hasn't provided GPS coordinates for your store yet. We're showing a default location."
-                : "The map shows your primary fulfillment hub. If this isn't correct:"}
-            </Text>
-            <List>
-              <List.Item>
-                Go to <strong>Settings &gt; Locations</strong> in your Shopify
-                Admin.
-              </List.Item>
-              <List.Item>
-                Ensure your address is complete and verified by the address
-                suggester.
-              </List.Item>
-              <List.Item>
-                Save the location to trigger Shopify's coordinate geocoding.
-              </List.Item>
-            </List>
+    <Layout>
+      {data.locationWarning && (
+        <Layout.Section>
+          <Banner title="Store location not found" tone="warning">
+            <p>
+              We couldn't geocode your store address. Please verify it in{" "}
+              <strong>Shopify Settings → Locations</strong> and re-save. The map
+              will use a default location until coordinates are confirmed.
+            </p>
           </Banner>
-        )}
-        <Card padding="0">
-          <div
-            style={{
-              position: "relative",
-              overflow: "hidden",
-              borderRadius: "var(--p-border-radius-200)",
-            }}
-          >
-            {/* 1. THE ACTUAL UI CONTENT (Blurred if not Pro) */}
-            <div
-              style={{
-                filter: isPro ? "none" : "blur(6px)",
-                opacity: isPro ? 1 : 0.5,
-                pointerEvents: isPro && !isSaving ? "auto" : "none", // Disable interaction while saving
-                transition: "filter 0.5s ease, opacity 0.5s ease",
-              }}
+        </Layout.Section>
+      )}
+
+      {saved && (
+        <Layout.Section>
+          <Banner title="Delivery zone saved successfully!" tone="success" />
+        </Layout.Section>
+      )}
+
+      {hasError && (
+        <Layout.Section>
+          <Banner title={String(fetcher.data.error)} tone="critical" />
+        </Layout.Section>
+      )}
+
+      {!isPro && (
+        <Layout.Section>
+          <Banner title="Upgrade to Pro for Custom Zones" tone="info">
+            <p>
+              Free accounts are locked to an automatic 6-mile radius. Upgrade to
+              Pro to unlock unlimited custom distances, metric unit toggling,
+              and Smart Radius Optimization.
+            </p>
+          </Banner>
+        </Layout.Section>
+      )}
+
+      <Layout.Section variant="oneThird">
+        <Card>
+          <BlockStack gap="500">
+            <BlockStack gap="200">
+              <Text as="h2" variant="headingMd">
+                Delivery Radius
+              </Text>
+              {data.storeAddress && (
+                <Text as="p" tone="subdued" variant="bodySm">
+                  📍 {data.storeAddress}
+                </Text>
+              )}
+            </BlockStack>
+
+            <InlineStack align="space-between" blockAlign="center">
+              <Text as="p" variant="bodyMd">
+                Current radius
+              </Text>
+              <Badge tone={isPro ? "success" : "info"} />
+              {radius} {unit} {!isPro && "(Free Limit)"}
+            </InlineStack>
+
+            <Box>
+              <RangeSlider
+                label={`Radius (${unit})`}
+                value={radius}
+                min={1}
+                max={maxRadius}
+                step={unitSystem === "IMPERIAL" ? 0.5 : 1}
+                onChange={(value) => setRadius(value as number)}
+                output
+                disabled={!isPro}
+              />
+            </Box>
+
+            <Box>
+              <Select
+                label="Unit System"
+                options={[
+                  { label: "Miles (US / Imperial)", value: "IMPERIAL" },
+                  { label: "Kilometers (Metric)", value: "METRIC" },
+                ]}
+                value={unitSystem}
+                onChange={setUnitSystem}
+                disabled={!isPro}
+              />
+            </Box>
+
+            {/* RESTORED CART RECOVERY CHECKBOX */}
+            <Box paddingBlockStart="200">
+              <Checkbox
+                label="Enable Cart Recovery Emails"
+                helpText="Automatically email customers who abandon their cart in your delivery zone."
+                checked={recoveryEmailEnabled}
+                onChange={setrecoveryEmailEnabled}
+              />
+            </Box>
+
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              loading={isSaving}
+              fullWidth
+              disabled={!isPro}
             >
-              <BlockStack gap="400">
-                <Box padding="400">
-                  <BlockStack gap="400">
-                    <InlineStack align="space-between">
-                      <Text as="h2" variant="headingMd">
-                        Local Delivery Strategy
-                      </Text>
-                      {isPro && (
-                        <Button
-                          size="slim"
-                          variant="primary"
-                          onClick={handleSave}
-                          loading={isSaving}
-                          icon={SaveIcon}
-                        >
-                          Save Strategy
-                        </Button>
-                      )}
-                    </InlineStack>
-
-                    <RangeSlider
-                      label={`Neighborhood Delivery Radius (${unit})`}
-                      value={deliveryRadius}
-                      onChange={setDeliveryRadius}
-                      min={1}
-                      max={maxRange}
-                      step={stepSize}
-                      disabled={isSaving} // Prevent changes during save
-                      suffix={
-                        <Text as="span" variant="bodyMd">
-                          {deliveryRadius} {unit}
-                        </Text>
-                      }
-                    />
-
-                    <Divider />
-
-                    <InlineStack align="space-between" blockAlign="center">
-                      <InlineStack gap="200">
-                        <Icon source={OrderIcon} tone="base" />
-                        <BlockStack>
-                          <Text as="p" variant="bodyMd" fontWeight="bold">
-                            Automated Order Recovery
-                          </Text>
-                          <Text as="p" variant="bodySm" tone="subdued">
-                            Notify customers when they are within your delivery
-                            zone.
-                          </Text>
-                        </BlockStack>
-                      </InlineStack>
-                      <Checkbox
-                        label="Enable Recovery"
-                        labelHidden
-                        checked={recoveryEnabled}
-                        onChange={setRecoveryEnabled}
-                        disabled={isSaving} // Prevent toggling during save
-                      />
-                    </InlineStack>
-                  </BlockStack>
-                </Box>
-
-                {/* GOOLE MAP*/}
-                <div
-                  style={{
-                    position: "relative",
-                    height: "450px",
-                    width: "100%",
-                    background: "#f1f1f1",
-                  }}
-                >
-                  {isPro && isLoadingMap && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        zIndex: 5,
-                        background: "rgba(241, 241, 241, 0.8)",
-                      }}
-                    >
-                      <Spinner size="large" />
-                    </div>
-                  )}
-                  <div
-                    ref={mapRef}
-                    style={{
-                      height: "450px",
-                      width: "100%",
-                      background: "#f1f1f1",
-                    }}
-                  />
-                </div>
-              </BlockStack>
-            </div>
-
-            {/* 2. THE GLASS OVERLAY (Only visible if not Pro) */}
-            {!isPro && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  zIndex: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "rgba(255, 255, 255, 0.2)",
-                  backdropFilter: "blur(2px)",
-                }}
-              >
-                <Box padding="400">
-                  <Card>
-                    <div style={{ padding: "24px", textAlign: "center" }}>
-                      <BlockStack gap="400" align="center">
-                        <div
-                          style={{
-                            width: "48px",
-                            height: "48px",
-                            borderRadius: "50%",
-                            backgroundColor:
-                              "var(--p-color-bg-surface-secondary)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            margin: "0 auto",
-                          }}
-                        >
-                          <Icon source={LockIcon} tone="base" />
-                        </div>
-                        <BlockStack gap="200">
-                          <Text as="h2" variant="headingLg">
-                            Unlock Pro Suite Features
-                          </Text>
-                          <Text as="p" variant="bodyMd" tone="subdued">
-                            Automate neighborhood routing & recover abandoned
-                            sales.
-                          </Text>
-                        </BlockStack>
-                        <Button
-                          variant="primary"
-                          size="large"
-                          onClick={() => navigate("/app/billing")}
-                        >
-                          Start 7-Day Pro Trial
-                        </Button>
-                      </BlockStack>
-                    </div>
-                  </Card>
-                </Box>
-              </div>
-            )}
-          </div>
+              Save Custom Zone
+            </Button>
+          </BlockStack>
         </Card>
-      </BlockStack>
-    </Box>
+      </Layout.Section>
+
+      <Layout.Section>
+        <Card>
+          <BlockStack gap="400">
+            <Text as="h2" variant="headingMd">
+              Coverage Map
+            </Text>
+
+            {mapError && (
+              <Banner title="Map unavailable" tone="critical">
+                Google Maps failed to load. Please check your API key
+                configuration in your environment variables.
+              </Banner>
+            )}
+
+            {!mapError && !mapReady && data.storeLat && (
+              <InlineStack align="center">
+                <Spinner size="small" />
+                <Text as="p" tone="subdued">
+                  Loading map…
+                </Text>
+              </InlineStack>
+            )}
+
+            <Box minHeight={mapError || !data.storeLat ? "0px" : "420px"}>
+              <div
+                ref={mapRef}
+                style={{
+                  height: data.storeLat && !mapError ? "420px" : "0px",
+                  width: "100%",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                  opacity: !isPro ? 0.8 : 1,
+                }}
+              />
+            </Box>
+          </BlockStack>
+        </Card>
+      </Layout.Section>
+    </Layout>
   );
 }

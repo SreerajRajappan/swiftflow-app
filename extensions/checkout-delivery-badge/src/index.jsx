@@ -1,74 +1,87 @@
-import "@shopify/ui-extensions/preact";
-import { render } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
+import {
+  reactExtension,
+  Banner,
+  useApi,
+  useApplyAttributeChange,
+  useShippingAddress,
+  useSettings as useExtensionSettings,
+} from "@shopify/ui-extensions-react/checkout";
 
-// 1. New entry point format
-export default function extension() {
-  render(<DeliveryBadge />, document.body);
-}
+// Standard Shopify entry point for rendering inside the checkout
+export default reactExtension("purchase.checkout.block.render", () => (
+  <DeliveryBadge />
+));
 
 function DeliveryBadge() {
-  // 2. We now read directly from the global `shopify` object!
-  const shopDomain = shopify.shop.myshopifyDomain;
-  const shippingAddress = shopify.shippingAddress?.value;
+  const { shop } = useApi();
+  const shippingAddress = useShippingAddress();
+  const applyAttributeChange = useApplyAttributeChange();
+  const settings = useExtensionSettings();
 
-  const [deliveryAvailable, setDeliveryAvailable] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [shown, setShown] = useState(false);
+  const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    async function checkDelivery() {
-      if (!shippingAddress?.address1) {
-        setLoading(false);
-        return;
-      }
+  // The merchant sets this URL in the Checkout Editor settings
+  const appUrl = settings?.app_url ?? "";
 
-      try {
-        // ⚠️ NOTE: Replace 'your-app-url.com' with your actual App Proxy / Tunnel URL
-        const response = await fetch(
-          `https://your-app-url.com/api/check-delivery?shop=${shopDomain}&address=${encodeURIComponent(
-            `${shippingAddress.address1}, ${shippingAddress.city}, ${shippingAddress.zip}`,
-          )}`,
-        );
-
-        const data = await response.json();
-        setDeliveryAvailable(data.inRadius);
-
-        // Check if we are allowed to update attributes, then apply it
-        if (
-          data.inRadius &&
-          shopify.instructions.value.attributes.canUpdateAttributes
-        ) {
-          await shopify.applyAttributeChange({
-            type: "updateAttribute",
-            key: "_swiftflow_in_delivery_zone",
-            value: "true",
-          });
-        }
-      } catch (error) {
-        console.error("Delivery check failed:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    checkDelivery();
-  }, [
+  // Build a stable address string so we only re-fetch when the actual location changes
+  const addressStr = [
     shippingAddress?.address1,
     shippingAddress?.city,
+    shippingAddress?.province,
     shippingAddress?.zip,
-    shopDomain,
-  ]);
+    shippingAddress?.countryCode,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
-  if (loading || deliveryAvailable === null) return null;
+  useEffect(() => {
+    // If we don't have enough data, hide the badge
+    if (!addressStr || !appUrl || !shop?.myshopifyDomain) {
+      setShown(false);
+      return;
+    }
 
-  if (deliveryAvailable) {
-    // 3. We use Polaris Web Components natively (s-banner instead of Banner)
-    return (
-      <s-banner tone="success" heading="Great news!">
-        We deliver to your area! Your order will arrive fresh and fast.
-      </s-banner>
-    );
-  }
+    let cancelled = false;
 
-  return null;
+    // Call our app's public API to verify the distance
+    const url = `${appUrl}/api/delivery-check?shop=${encodeURIComponent(
+      shop.myshopifyDomain,
+    )}&address=${encodeURIComponent(addressStr)}`;
+
+    fetch(url)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+
+        if (data.inRadius) {
+          setShown(true);
+          // Fallback to a default message if the backend doesn't provide one
+          setMessage(data.message ?? "Great news! We deliver to your area.");
+
+          // CRITICAL: This exact key maps to our ORDERS_CREATE webhook for Revenue Tracking
+          applyAttributeChange({
+            type: "updateAttribute",
+            key: "_swiftflow_delivery",
+            value: "true",
+          });
+        } else {
+          setShown(false);
+        }
+      })
+      .catch((err) => {
+        console.error("[SwiftFlow] Delivery check failed:", err);
+        if (!cancelled) setShown(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [addressStr, appUrl, shop?.myshopifyDomain, applyAttributeChange]);
+
+  if (!shown) return null;
+
+  // Render using Polaris-style native checkout components
+  return <Banner status="success">{message}</Banner>;
 }
