@@ -32,3 +32,7 @@ redirect_urls = [
 url = "https://swiftflow-app.fly.dev"
 subpath = "swiftflow-revenue"
 prefix = "apps"
+
+[[webhooks.subscriptions]]
+topics = [ "carts/update" ]
+uri = "/webhooks/carts/update"

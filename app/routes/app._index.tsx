@@ -14,7 +14,7 @@ import { Page, Tabs, Box, BlockStack } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { fireTestEmail } from "~/agent.server";
+// import { fireTestEmail } from "~/agent.server";
 import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "app/constants";
 
 // Import your modularized tab components
@@ -59,7 +59,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session, billing } = await authenticate.admin(request);
   const shop = session.shop;
 
-  await fireTestEmail("sreerajrajapan@gmail.com");
+  // 🛑 TEMPORARY AI TEST: Inject a fake abandoned cart
+  // await prisma.cartRecovery.upsert({
+  //   where: { cartToken: "fake-ai-test-cart" },
+  //   update: {
+  //     updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // Force it to be 2 hours old
+  //     agentStatus: "IDLE",
+  //     emailSent: false,
+  //   },
+  //   create: {
+  //     shop,
+  //     cartToken: "fake-ai-test-cart",
+  //     customerEmail: "sreerajrajapan@gmail.com", // ⬅️ The AI will email you here
+  //     inDeliveryZone: true,
+  //     cartValue: 120.5,
+  //     abTestVariant: "A",
+  //     agentStatus: "IDLE",
+  //     lineItems: [{ title: "Premium Widget" }, { title: "Super Fast Charger" }],
+  //     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+  //     updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+  //   },
+  // });
+
+  // await fireTestEmail("sreerajrajapan@gmail.com");
 
   const billingCheck = await billing.check({
     plans: [MONTHLY_PLAN_PRO, MONTHLY_PLAN_BASIC],
@@ -224,9 +246,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // Safely ensure settings exist AND return the updated settings object
   if (!settings) {
+    // Safely ensure settings exist AND return the updated settings object via atomic upsert
     const defaultRadius = unitSystem === "METRIC" ? 10.0 : 6.0;
-    settings = await prisma.appSettings.create({
-      data: {
+    settings = await prisma.appSettings.upsert({
+      where: { shop },
+      create: {
         shop,
         deliveryRadius: defaultRadius,
         unitSystem,
@@ -234,6 +258,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         storeLng,
         storeAddress,
       },
+      update:
+        storeLat && storeLng
+          ? {
+              storeLat,
+              storeLng,
+              storeAddress,
+              unitSystem,
+            }
+          : {},
     });
   } else if (storeLat && storeLng) {
     settings = await prisma.appSettings.update({

@@ -9,6 +9,7 @@ import {
 } from "../services/proximity.server";
 
 export async function action({ request }: ActionFunctionArgs) {
+  console.log("🔥 WEBHOOK RECEIVED: carts/update");
   try {
     const { topic, shop, payload } = await authenticate.webhook(request);
 
@@ -35,6 +36,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (!cartToken) {
       return json({ success: true, skipped: "no_cart_token" });
+    }
+    console.log("Checking email:", customerEmail);
+    // 🛑 FILTER 1: Stop tracking anonymous carts. The AI can't email them!
+    if (!customerEmail) {
+      return json({ success: true, skipped: "no_email" });
     }
 
     const settings = await db.appSettings.findFirst({ where: { shop } });
@@ -84,7 +90,6 @@ export async function action({ request }: ActionFunctionArgs) {
       }
     }
 
-    // Determine A/B variant for this cart (Claude's addition)
     const abTestVariant = settings.abTestEnabled
       ? Math.random() < 0.5
         ? "A"
@@ -103,6 +108,8 @@ export async function action({ request }: ActionFunctionArgs) {
         cartValue,
         lineItems, // Update the product context in case they added more items
         updatedAt: new Date(),
+        // 🛑 FILTER 2: If they updated their address and are now IN the zone, queue it up!
+        ...(inDeliveryZone ? { agentStatus: "IDLE" } : {}),
       },
       create: {
         shop,
@@ -113,15 +120,13 @@ export async function action({ request }: ActionFunctionArgs) {
         customerLng,
         inDeliveryZone,
         cartValue,
-        lineItems, // Save the product context for the AI Agent
+        lineItems,
         abTestVariant,
         recoveryValue: cartValue,
-        agentStatus: "IDLE", // Explicitly mark as ready for the background engine
+        // 🛑 FILTER 3: Only queue for the AI if they are confirmed in the delivery radius
+        agentStatus: inDeliveryZone ? "IDLE" : "OUT_OF_ZONE",
       },
     });
-
-    // NOTE: Synchronous email sending removed to comply with Shopify's 5-second timeout rule.
-    // The AI Agent in the cron job will handle this safely!
 
     return json({ success: true, inDeliveryZone });
   } catch (err) {

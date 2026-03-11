@@ -6,31 +6,31 @@ import db from "./db.server";
 const openai = new OpenAI();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export async function fireTestEmail(targetEmail: string) {
-  console.log(`Attempting to send test email to ${targetEmail}...`);
+// export async function fireTestEmail(targetEmail: string) {
+//   console.log(`Attempting to send test email to ${targetEmail}...`);
 
-  try {
-    const data = await resend.emails.send({
-      from: "SwiftFlow AI <hello@logiclooms.io>",
-      to: targetEmail,
-      subject: "🚀 SwiftFlow Infrastructure is LIVE",
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2>Hello from LogicLooms!</h2>
-          <p>This is a live test from your newly verified <strong>logiclooms.io</strong> domain.</p>
-          <p>If you are reading this in your inbox, your DNS, DKIM, SPF, and MX records are perfectly configured, and the Resend API is securely connected to your Remix app.</p>
-          <p>Great work, Lead Developer.</p>
-        </div>
-      `,
-    });
+//   try {
+//     const data = await resend.emails.send({
+//       from: "SwiftFlow AI <hello@logiclooms.io>",
+//       to: targetEmail,
+//       subject: "🚀 SwiftFlow Infrastructure is LIVE",
+//       html: `
+//         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+//           <h2>Hello from LogicLooms!</h2>
+//           <p>This is a live test from your newly verified <strong>logiclooms.io</strong> domain.</p>
+//           <p>If you are reading this in your inbox, your DNS, DKIM, SPF, and MX records are perfectly configured, and the Resend API is securely connected to your Remix app.</p>
+//           <p>Great work, Lead Developer.</p>
+//         </div>
+//       `,
+//     });
 
-    console.log("✅ Email sent successfully:", data);
-    return { success: true, data };
-  } catch (error) {
-    console.error("❌ Failed to send email:", error);
-    return { success: false, error };
-  }
-}
+//     console.log("✅ Email sent successfully:", data);
+//     return { success: true, data };
+//   } catch (error) {
+//     console.error("❌ Failed to send email:", error);
+//     return { success: false, error };
+//   }
+// }
 
 export async function runCartRecoveryAgent() {
   console.log("🤖 [AI Agent] Waking up to check for abandoned carts...");
@@ -39,7 +39,7 @@ export async function runCartRecoveryAgent() {
     // 1. Find all carts that are waiting for the Agent
     const pendingCarts = await db.cartRecovery.findMany({
       where: {
-        agentStatus: "IDLE",
+        agentStatus: "ANALYZING",
         emailSent: false,
         inDeliveryZone: true,
       },
