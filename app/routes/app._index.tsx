@@ -10,19 +10,20 @@ import {
   useSubmit,
   useFetcher,
 } from "@remix-run/react";
-import { Page, Tabs, Box, BlockStack } from "@shopify/polaris";
+import { Page, Tabs, Box, BlockStack, Banner, Text } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 // import { fireTestEmail } from "~/agent.server";
 import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "app/constants";
 
-// Import your modularized tab components
 import { PersonalizerTab } from "../components/PersonalizerTab";
 import DeliveryTab from "../components/DeliveryTab";
 import { RevenueSuiteTab } from "../components/RevenueSuiteTab";
 import { InsightsTab } from "../components/InsightsTab";
 import { RevenueLeaksTab } from "../components/RevenueLeaksTab";
+import { processAbandonedCarts } from "../services/email.server";
+import { runCartRecoveryAgent } from "../agent.server";
 
 const LOCATION_QUERY = `#graphql
   query GetPrimaryLocation {
@@ -58,30 +59,6 @@ const METRIC_COUNTRIES = [
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session, billing } = await authenticate.admin(request);
   const shop = session.shop;
-
-  // 🛑 TEMPORARY AI TEST: Inject a fake abandoned cart
-  // await prisma.cartRecovery.upsert({
-  //   where: { cartToken: "fake-ai-test-cart" },
-  //   update: {
-  //     updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // Force it to be 2 hours old
-  //     agentStatus: "IDLE",
-  //     emailSent: false,
-  //   },
-  //   create: {
-  //     shop,
-  //     cartToken: "fake-ai-test-cart",
-  //     customerEmail: "sreerajrajapan@gmail.com", // ⬅️ The AI will email you here
-  //     inDeliveryZone: true,
-  //     cartValue: 120.5,
-  //     abTestVariant: "A",
-  //     agentStatus: "IDLE",
-  //     lineItems: [{ title: "Premium Widget" }, { title: "Super Fast Charger" }],
-  //     createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-  //     updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-  //   },
-  // });
-
-  // await fireTestEmail("sreerajrajapan@gmail.com");
 
   const billingCheck = await billing.check({
     plans: [MONTHLY_PLAN_PRO, MONTHLY_PLAN_BASIC],
@@ -246,7 +223,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // Safely ensure settings exist AND return the updated settings object
   if (!settings) {
-    // Safely ensure settings exist AND return the updated settings object via atomic upsert
     const defaultRadius = unitSystem === "METRIC" ? 10.0 : 6.0;
     settings = await prisma.appSettings.upsert({
       where: { shop },
@@ -306,13 +282,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const intent = formData.get("intent");
 
-  // 1. Reset Data Action
   if (intent === "reset_data") {
     await prisma.conversionEvent.deleteMany({ where: { shop } });
     return json({ success: true, message: "Data reset successfully" });
   }
 
-  // 2. Map & Radius Save Action (Triggered specifically by DeliveryTab)
   if (intent === "save-delivery") {
     const deliveryRadius = parseFloat(formData.get("deliveryRadius") as string);
     const unitSystem = formData.get("unitSystem") as string;
@@ -336,7 +310,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return json({ success: true, intent });
   }
 
-  // 3. Global Save Action (Triggered by the Top Bar Button)
   if (intent === "save-global") {
     const customText = formData.get("customText") as string;
     const customColor = formData.get("customColor") as string;
@@ -365,6 +338,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
+  if (intent === "run-ai-agent") {
+    try {
+      console.log("⚡ Merchant manually triggered AI Agent");
+      await processAbandonedCarts();
+      await runCartRecoveryAgent();
+
+      return json({
+        success: true,
+        intent: "run-ai-agent",
+        message: "AI Scan Complete: Emails dispatched!",
+      });
+    } catch (error) {
+      console.error("Manual AI Trigger Failed:", error);
+      return json({ error: "AI Scan encountered an error" }, { status: 500 });
+    }
+  }
+
   return json({ error: "Unknown intent" }, { status: 400 });
 };
 
@@ -389,12 +379,12 @@ export default function Index() {
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const deliveryFetcher = useFetcher();
+  const aiFetcher = useFetcher<typeof action>();
   const isSaving = useNavigation().state === "submitting";
   const navigate = useNavigate();
 
   const [selectedTab, setSelectedTab] = useState(0);
 
-  // Use the explicitly returned `settings` object to initialize state!
   const [fontSize, setFontSize] = useState(Number(settings?.fontSize) || 16);
   const [recoveryEmailEnabled, setrecoveryEmailEnabled] = useState(
     settings?.recoveryEmailEnabled || false,
@@ -403,7 +393,7 @@ export default function Index() {
   const [buttonText, setButtonText] = useState(
     settings?.buttonText || "Check Availability",
   );
-  const [hexColor, setHexColor] = useState(settings?.headerColor || "#5c6ac4"); // <--- CHANGED
+  const [hexColor, setHexColor] = useState(settings?.headerColor || "#5c6ac4");
   const [isEnabled, setIsEnabled] = useState(
     settings?.revenueSuiteEnabled ?? true,
   );
@@ -413,15 +403,15 @@ export default function Index() {
     [],
   );
 
+  // 👇 REORDERED TABS ARRAY
   const tabs = [
-    { id: "personalizer", content: "Personalizer" },
-    { id: "delivery", content: "Delivery" },
     { id: "revenue", content: "Revenue Suite" },
+    { id: "delivery", content: "Delivery" },
+    { id: "personalizer", content: "Personalizer" },
     { id: "leaks", content: "Revenue Leaks" },
     { id: "insights", content: "Insights" },
   ];
 
-  // The global save button now safely sends "save-global" intent
   const handleSave = () => {
     submit(
       {
@@ -443,6 +433,10 @@ export default function Index() {
     }
   };
 
+  const handleRunScan = () => {
+    aiFetcher.submit({ intent: "run-ai-agent" }, { method: "POST" });
+  };
+
   const handleToggle = () => {
     const newState = !isEnabled;
     setIsEnabled(newState);
@@ -450,8 +444,8 @@ export default function Index() {
       {
         intent: "save-global",
         customText,
-        customColor: hexColor, // <--- CHANGED
-        buttonText, // <--- NEW
+        customColor: hexColor,
+        buttonText,
         isEnabled: String(newState),
       },
       { method: "POST" },
@@ -459,7 +453,8 @@ export default function Index() {
   };
 
   useEffect(() => {
-    if (parseFloat(goalProgress) >= 100 && selectedTab === 2) {
+    // 👇 UPDATED TAB CHECK FOR CONFETTI (Now Index 0)
+    if (parseFloat(goalProgress) >= 100 && selectedTab === 0) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
     }
   }, [goalProgress, selectedTab]);
@@ -479,44 +474,62 @@ export default function Index() {
     }
   }, [actionData, shopify]);
 
+  useEffect(() => {
+    const aiData = aiFetcher.data as
+      | {
+          success?: boolean;
+          error?: string;
+          message?: string;
+        }
+      | undefined;
+
+    if (aiData?.success) {
+      shopify?.toast?.show(aiData.message || "AI Scan Complete!", {
+        duration: 3000,
+      });
+    } else if (aiData?.error) {
+      shopify?.toast?.show(aiData.error, {
+        duration: 3000,
+        isError: true,
+      });
+    }
+  }, [aiFetcher.data, shopify]);
+
   return (
-    <Page title="SwiftFlow Admin">
-      <TitleBar title="SwiftFlow: Revenue Suite">
+    <Page title="SwiftFlow: Local Cart Recovery">
+      <TitleBar title="SwiftFlow: Local Cart Recovery">
         <button onClick={handleSave} variant="primary">
           {isSaving ? "Saving..." : "Save Settings"}
         </button>
       </TitleBar>
 
       <BlockStack gap="400">
+        {isPro ? (
+          trialDaysLeft > 0 ? (
+            <Banner tone="success">
+              <Text as="p">
+                <strong>Pro Suite Active:</strong> Your AI Cart Recovery Agent
+                is monitoring local drop-offs. You have{" "}
+                <strong>{trialDaysLeft} days</strong> remaining in your free
+                trial.
+              </Text>
+            </Banner>
+          ) : null /* Hides banner entirely once they are a paying customer */
+        ) : (
+          <Banner
+            tone="info"
+            action={{ content: "Upgrade to Pro", url: "/app/billing" }}
+          >
+            <Text as="p">
+              You are on the Basic Plan. Upgrade to Pro to unlock Autonomous AI
+              Emails and unlimited recovered revenue.
+            </Text>
+          </Banner>
+        )}
         <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
           <Box paddingBlockStart="400">
+            {/* 👇 REORDERED COMPONENT RENDERING TO MATCH NEW TABS ARRAY 👇 */}
             {selectedTab === 0 && (
-              <PersonalizerTab
-                isPro={isPro}
-                trialDaysLeft={trialDaysLeft}
-                isSaving={isSaving}
-                customText={customText}
-                setCustomText={setCustomText}
-                buttonText={buttonText}
-                setButtonText={setButtonText}
-                hexColor={hexColor}
-                setHexColor={setHexColor}
-                handleSave={handleSave}
-                navigate={navigate}
-                fontSize={fontSize}
-                setFontSize={setFontSize}
-              />
-            )}
-            {selectedTab === 1 && (
-              <DeliveryTab
-                isPro={isPro}
-                data={data}
-                fetcher={deliveryFetcher}
-                recoveryEmailEnabled={recoveryEmailEnabled}
-                setrecoveryEmailEnabled={setrecoveryEmailEnabled}
-              />
-            )}
-            {selectedTab === 2 && (
               <RevenueSuiteTab
                 data={settings}
                 fetcher={deliveryFetcher}
@@ -534,7 +547,39 @@ export default function Index() {
                 onResetData={onResetData}
               />
             )}
-            {selectedTab === 3 && <RevenueLeaksTab leaks={activeLeaks} />}
+            {selectedTab === 1 && (
+              <DeliveryTab
+                isPro={isPro}
+                data={data}
+                fetcher={deliveryFetcher}
+                recoveryEmailEnabled={recoveryEmailEnabled}
+                setrecoveryEmailEnabled={setrecoveryEmailEnabled}
+              />
+            )}
+            {selectedTab === 2 && (
+              <PersonalizerTab
+                isPro={isPro}
+                trialDaysLeft={trialDaysLeft}
+                isSaving={isSaving}
+                customText={customText}
+                setCustomText={setCustomText}
+                buttonText={buttonText}
+                setButtonText={setButtonText}
+                hexColor={hexColor}
+                setHexColor={setHexColor}
+                handleSave={handleSave}
+                navigate={navigate}
+                fontSize={fontSize}
+                setFontSize={setFontSize}
+              />
+            )}
+            {selectedTab === 3 && (
+              <RevenueLeaksTab
+                leaks={activeLeaks}
+                onRunScan={handleRunScan}
+                isScanning={aiFetcher.state === "submitting"}
+              />
+            )}
             {selectedTab === 4 && (
               <InsightsTab
                 isPro={isPro}

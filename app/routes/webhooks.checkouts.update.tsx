@@ -9,38 +9,31 @@ import {
 } from "../services/proximity.server";
 
 export async function action({ request }: ActionFunctionArgs) {
-  console.log("🔥 WEBHOOK RECEIVED: carts/update");
+  console.log("🔥 WEBHOOK RECEIVED: checkouts/update");
   try {
     const { topic, shop, payload } = await authenticate.webhook(request);
 
-    // Security Guard
-    if (topic !== "CARTS_UPDATE") {
+    // Allow both topics in case Shopify sends legacy cart updates
+    if (topic !== "CHECKOUTS_UPDATE" && topic !== "CARTS_UPDATE") {
       return new Response("Unhandled webhook topic", { status: 200 });
     }
 
-    if (!payload || !shop) {
-      return json({ error: "Invalid webhook" }, { status: 400 });
-    }
-
     const cart = payload as Record<string, any>;
-    const cartToken = (cart.token as string | undefined) ?? null;
+
+    // 🛑 CRITICAL FIX: Handle the token switch between Carts and Checkouts
+    const checkoutToken = (cart.token as string | undefined) ?? null;
+    const cartToken = (cart.cart_token as string | undefined) ?? checkoutToken;
+
     const customerEmail = (cart.email as string | undefined) ?? null;
     const shippingAddress = cart.shipping_address as Record<
       string,
       string
     > | null;
     const cartValue = parseFloat(cart.total_price ?? "0");
-
-    // --- VITAL FOR AI AGENT: Harvest the exact cart contents ---
     const lineItems = cart.line_items || [];
 
     if (!cartToken) {
       return json({ success: true, skipped: "no_cart_token" });
-    }
-    console.log("Checking email:", customerEmail);
-    // 🛑 FILTER 1: Stop tracking anonymous carts. The AI can't email them!
-    if (!customerEmail) {
-      return json({ success: true, skipped: "no_email" });
     }
 
     const settings = await db.appSettings.findFirst({ where: { shop } });
@@ -51,6 +44,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
     if (!settings.storeLat || !settings.storeLng) {
       return json({ success: true, skipped: "store_location_missing" });
+    }
+
+    // FILTER: We only want to track checkouts that have an email!
+    if (!customerEmail) {
+      return json({ success: true, skipped: "no_email" });
     }
 
     // Resolve customer coordinates
@@ -106,10 +104,10 @@ export async function action({ request }: ActionFunctionArgs) {
         customerLng,
         inDeliveryZone,
         cartValue,
-        lineItems, // Update the product context in case they added more items
+        lineItems,
         updatedAt: new Date(),
-        // 🛑 FILTER 2: If they updated their address and are now IN the zone, queue it up!
-        ...(inDeliveryZone ? { agentStatus: "IDLE" } : {}),
+        // Only queue for AI if they typed an address and are in the zone
+        ...(inDeliveryZone && shippingAddress ? { agentStatus: "IDLE" } : {}),
       },
       create: {
         shop,
@@ -123,14 +121,16 @@ export async function action({ request }: ActionFunctionArgs) {
         lineItems,
         abTestVariant,
         recoveryValue: cartValue,
-        // 🛑 FILTER 3: Only queue for the AI if they are confirmed in the delivery radius
-        agentStatus: inDeliveryZone ? "IDLE" : "OUT_OF_ZONE",
+        agentStatus: inDeliveryZone && shippingAddress ? "IDLE" : "OUT_OF_ZONE",
       },
     });
 
+    console.log(
+      `✅ [DB SUCCESS] Saved Checkout for ${customerEmail} | Items: ${lineItems.length}`,
+    );
     return json({ success: true, inDeliveryZone });
   } catch (err) {
-    console.error("[Webhook:carts/update]", err);
+    console.error("[Webhook:checkouts/update]", err);
     return json({ error: "Processing failed" }, { status: 500 });
   }
 }

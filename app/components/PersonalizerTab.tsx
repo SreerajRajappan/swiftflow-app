@@ -1,6 +1,5 @@
 import {
   BlockStack,
-  Banner,
   Card,
   InlineStack,
   Icon,
@@ -61,33 +60,6 @@ export function PersonalizerTab({
 }: PersonalizerTabProps) {
   return (
     <BlockStack gap="400">
-      {/* 1. TOP BANNER */}
-      {isPro && trialDaysLeft > 0 && (
-        <Banner tone="info">
-          <InlineStack align="space-between" blockAlign="center">
-            <Text as="p" variant="bodyMd">
-              You are on a{" "}
-              <Text as="span" fontWeight="bold">
-                Pro Trial
-              </Text>{" "}
-              with
-              <Text as="span" fontWeight="bold">
-                {" "}
-                {trialDaysLeft} days
-              </Text>{" "}
-              remaining.
-            </Text>
-            <Button
-              variant="primary"
-              tone="success"
-              onClick={() => navigate("/app/billing")}
-            >
-              Secure Pro Access
-            </Button>
-          </InlineStack>
-        </Banner>
-      )}
-
       {/* 2. THE SYMMETRICAL GRID */}
       <div className="personalizer-container">
         {/* LEFT COLUMN: Configuration */}

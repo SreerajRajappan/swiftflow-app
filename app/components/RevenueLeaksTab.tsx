@@ -7,7 +7,7 @@ import {
   EmptyState,
   InlineStack,
   Icon,
-  Button, // <-- Brought this back!
+  Button,
 } from "@shopify/polaris";
 import {
   AlertDiamondIcon,
@@ -16,7 +16,15 @@ import {
   PlayIcon,
 } from "@shopify/polaris-icons";
 
-export function RevenueLeaksTab({ leaks }: { leaks: any[] }) {
+export function RevenueLeaksTab({
+  leaks,
+  onRunScan,
+  isScanning,
+}: {
+  leaks: any[];
+  onRunScan: () => void;
+  isScanning: boolean;
+}) {
   if (!leaks || leaks.length === 0) {
     return (
       <Card>
@@ -26,10 +34,8 @@ export function RevenueLeaksTab({ leaks }: { leaks: any[] }) {
           action={{
             content: "Run AI Agent Scan",
             icon: PlayIcon,
-            onAction: () =>
-              alert(
-                "In Phase 2, this will instantly trigger the backend AI Agent!",
-              ),
+            onAction: onRunScan,
+            loading: isScanning,
           }}
         >
           <p>
@@ -43,7 +49,7 @@ export function RevenueLeaksTab({ leaks }: { leaks: any[] }) {
   }
 
   const tableRows = leaks.map((leak) => {
-    const tone =
+    const tone: "critical" | "warning" | "info" | "success" | "new" =
       leak.severity === "CRITICAL"
         ? "critical"
         : leak.severity === "WARNING"
@@ -55,18 +61,30 @@ export function RevenueLeaksTab({ leaks }: { leaks: any[] }) {
         Detected
       </Badge>
     );
-    if (leak.status === "AGENT_WORKING")
+
+    if (leak.status === "AGENT_WORKING" || leak.status === "ANALYZING") {
       statusBadge = (
         <Badge key={`status-${leak.id}`} tone="info" icon={ClockIcon}>
           Agent Working
         </Badge>
       );
-    if (leak.status === "RECOVERED")
+    }
+    // The AI finished its job, but the customer hasn't bought yet
+    if (leak.status === "COMPLETED") {
+      statusBadge = (
+        <Badge key={`status-${leak.id}`} tone="info" icon={CheckCircleIcon}>
+          Email Sent
+        </Badge>
+      );
+    }
+    // The customer actually paid!
+    if (leak.status === "RECOVERED") {
       statusBadge = (
         <Badge key={`status-${leak.id}`} tone="success" icon={CheckCircleIcon}>
           Recovered
         </Badge>
       );
+    }
 
     return [
       <InlineStack key={`details-${leak.id}`} gap="200" align="start">
@@ -86,7 +104,7 @@ export function RevenueLeaksTab({ leaks }: { leaks: any[] }) {
         {leak.severity}
       </Badge>,
       <Text key={`val-${leak.id}`} as="span" variant="bodyMd" fontWeight="bold">
-        ${leak.potentialValue.toFixed(2)}
+        ${(leak.potentialValue || 0).toFixed(2)}
       </Text>,
       statusBadge,
       new Date(leak.createdAt).toLocaleDateString(),
@@ -94,23 +112,25 @@ export function RevenueLeaksTab({ leaks }: { leaks: any[] }) {
   });
 
   const totalAtRisk = leaks
-    .filter((l) => l.status !== "RECOVERED")
-    .reduce((sum, leak) => sum + leak.potentialValue, 0);
+    .filter((l) => l.status !== "RECOVERED" && l.status !== "COMPLETED")
+    .reduce((sum, leak) => sum + (leak.potentialValue || 0), 0);
 
   return (
     <BlockStack gap="400">
-      <Card background="bg-surface-critical">
-        <BlockStack gap="200">
-          <Text as="h2" variant="headingMd" tone="critical">
-            Immediate Attention Required
-          </Text>
-          <Text as="p" variant="bodyMd">
-            There is currently <strong>${totalAtRisk.toFixed(2)}</strong> in
-            abandoned high-value carts. Your AI Agent is currently analyzing
-            these to dispatch targeted recovery emails.
-          </Text>
-        </BlockStack>
-      </Card>
+      {totalAtRisk > 0 && (
+        <Card background="bg-surface-critical">
+          <BlockStack gap="200">
+            <Text as="h2" variant="headingMd" tone="critical">
+              Immediate Attention Required
+            </Text>
+            <Text as="p" variant="bodyMd">
+              There is currently <strong>${totalAtRisk.toFixed(2)}</strong> in
+              abandoned high-value carts. Your AI Agent is analyzing these to
+              dispatch targeted recovery emails.
+            </Text>
+          </BlockStack>
+        </Card>
+      )}
 
       <Card>
         <BlockStack gap="400">
@@ -118,15 +138,7 @@ export function RevenueLeaksTab({ leaks }: { leaks: any[] }) {
             <Text as="h3" variant="headingMd">
               Active Revenue Leaks
             </Text>
-            {/* The Action Button for Merchants */}
-            <Button
-              icon={PlayIcon}
-              onClick={() =>
-                alert(
-                  "In Phase 2, this will instantly trigger the backend AI Agent!",
-                )
-              }
-            >
+            <Button icon={PlayIcon} onClick={onRunScan} loading={isScanning}>
               Run AI Agent Scan
             </Button>
           </InlineStack>

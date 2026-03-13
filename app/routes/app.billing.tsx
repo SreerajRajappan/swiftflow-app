@@ -16,17 +16,13 @@ import {
   CheckCircleIcon,
   StarIcon,
   CashDollarIcon,
-  MagicIcon,
+  LocationIcon,
 } from "@shopify/polaris-icons";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Form, useNavigation } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
-import {
-  MONTHLY_PLAN_BASIC,
-  MONTHLY_PLAN_PRO,
-  MONTHLY_PLAN_PLATINUM,
-} from "../constants";
+import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "../constants";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -39,7 +35,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const plan = formData.get("plan");
 
-  // Stable return URL for embedded apps
   const returnUrl = `https://admin.shopify.com/store/${session.shop.split(".")[0]}/apps/${process.env.SHOPIFY_API_KEY}/app`;
 
   try {
@@ -52,13 +47,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return redirect(confirmationUrl, { target: "_parent" });
   } catch (error: any) {
     if (error instanceof Response) throw error;
-
     const reauthUrl = error.headers?.get?.(
       "X-Shopify-API-Request-Failure-Reauthorize-Url",
     );
     if (reauthUrl) return redirect(reauthUrl, { target: "_parent" });
-
-    console.error("Billing Error:", error);
     return json({ error: "Billing failed" }, { status: 500 });
   }
 };
@@ -88,36 +80,42 @@ export default function BillingPage() {
 
   return (
     <Page
-      title="Scale Your Revenue"
-      subtitle="Select the plan that matches your business goals."
+      title="Unlock AI Cart Recovery"
+      subtitle="Rescue local delivery drop-offs before they buy from a competitor."
       backAction={{ content: "Dashboard", url: "/app" }}
     >
       <BlockStack gap="800">
         <Layout>
           {/* BASIC PLAN */}
-          <Layout.Section variant="oneThird">
+          <Layout.Section variant="oneHalf">
             <Card>
-              <Box minHeight="420px">
+              <Box minHeight="380px">
                 <BlockStack gap="400">
-                  <Text as="h2" variant="headingMd">
-                    Basic Personalizer
-                  </Text>
+                  <InlineStack gap="200">
+                    <Icon source={LocationIcon} tone="base" />
+                    <Text as="h2" variant="headingMd">
+                      Basic Recovery
+                    </Text>
+                  </InlineStack>
                   <BlockStack gap="100">
                     <Text as="h1" variant="headingLg">
-                      $9.99{" "}
+                      $29.00{" "}
                       <Text as="span" variant="bodySm" tone="subdued">
                         / month
                       </Text>
                     </Text>
                     <Text as="p" variant="bodySm" tone="subdued">
-                      Essential branding for growing shops.
+                      Perfect for small local shops starting out.
                     </Text>
                   </BlockStack>
                   <Divider />
                   <BlockStack gap="200">
-                    <FeatureItem text="Product Personalizer Widget" />
-                    <FeatureItem text="Custom Colors & CSS" />
-                    <FeatureItem text="Standard Analytics" />
+                    <FeatureItem
+                      text="Up to $1,000 / mo in recovered revenue"
+                      bold
+                    />
+                    <FeatureItem text="Geofenced Delivery Radius Logic" />
+                    <FeatureItem text="Revenue Tracking Dashboard" />
                     <FeatureItem text="Email Support" />
                   </BlockStack>
                 </BlockStack>
@@ -126,7 +124,7 @@ export default function BillingPage() {
                 <Form method="post">
                   <input type="hidden" name="plan" value={MONTHLY_PLAN_BASIC} />
                   <Button submit loading={isSubmitting} fullWidth size="large">
-                    Select Basic
+                    Start 14-Day Free Trial
                   </Button>
                 </Form>
               </Box>
@@ -134,9 +132,9 @@ export default function BillingPage() {
           </Layout.Section>
 
           {/* PRO PLAN */}
-          <Layout.Section variant="oneThird">
+          <Layout.Section variant="oneHalf">
             <Card background="bg-surface-secondary">
-              <Box minHeight="420px">
+              <Box minHeight="380px">
                 <BlockStack gap="400">
                   <InlineStack align="space-between">
                     <InlineStack gap="200">
@@ -145,11 +143,11 @@ export default function BillingPage() {
                         Pro Suite
                       </Text>
                     </InlineStack>
-                    <Badge tone="success">7-DAY TRIAL</Badge>
+                    <Badge tone="success">MOST POPULAR</Badge>
                   </InlineStack>
                   <BlockStack gap="100">
                     <Text as="h1" variant="headingLg">
-                      $29.99{" "}
+                      $49.00{" "}
                       <Text as="span" variant="bodySm" tone="subdued">
                         / month
                       </Text>
@@ -160,16 +158,18 @@ export default function BillingPage() {
                       tone="success"
                       fontWeight="bold"
                     >
-                      Turn abandoned carts into recovered revenue.
+                      Unlock your dedicated AI copywriter.
                     </Text>
                   </BlockStack>
                   <Divider />
                   <BlockStack gap="200">
+                    <FeatureItem text="Unlimited recovered revenue" bold />
+                    <FeatureItem text="Autonomous AI Email Generation" bold />
+                    <FeatureItem
+                      text="A/B Offer Testing (e.g. 10% vs Free Delivery)"
+                      bold
+                    />
                     <FeatureItem text="Everything in Basic" />
-                    <FeatureItem text="Neighborhood Delivery Optimizer" bold />
-                    <FeatureItem text="Live Social Proof Widgets" bold />
-                    <FeatureItem text="Automated Order Recovery" />
-                    <FeatureItem text="Priority Chat Support" />
                   </BlockStack>
                 </BlockStack>
               </Box>
@@ -183,69 +183,7 @@ export default function BillingPage() {
                     fullWidth
                     size="large"
                   >
-                    Start Pro Free Trial
-                  </Button>
-                </Form>
-              </Box>
-            </Card>
-          </Layout.Section>
-
-          {/* PLATINUM PLAN */}
-          <Layout.Section variant="oneThird">
-            <Card background="bg-surface-magic">
-              <Box minHeight="420px">
-                <BlockStack gap="400">
-                  <InlineStack align="space-between">
-                    <InlineStack gap="200">
-                      <Icon source={MagicIcon} tone="magic" />
-                      <Text as="h2" variant="headingMd">
-                        Platinum AI
-                      </Text>
-                    </InlineStack>
-                    <Badge tone="info">14-DAY TRIAL</Badge>
-                  </InlineStack>
-                  <BlockStack gap="100">
-                    <Text as="h1" variant="headingLg">
-                      $49.99{" "}
-                      <Text as="span" variant="bodySm" tone="subdued">
-                        / month
-                      </Text>
-                    </Text>
-                    <Text
-                      as="p"
-                      variant="bodySm"
-                      tone="magic"
-                      fontWeight="bold"
-                    >
-                      A dedicated AI Agent working for you 24/7.
-                    </Text>
-                  </BlockStack>
-                  <Divider />
-                  <BlockStack gap="200">
-                    <FeatureItem text="Everything in Pro" />
-                    <FeatureItem text="Autonomous AI Cart Recovery" bold />
-                    <FeatureItem text="VIP Post-Purchase Upsell Agent" bold />
-                    <FeatureItem text="AI A/B Test Optimizer" bold />
-                    <FeatureItem text="Dedicated Account Manager" />
-                  </BlockStack>
-                </BlockStack>
-              </Box>
-              <Box paddingBlockStart="400">
-                <Form method="post">
-                  <input
-                    type="hidden"
-                    name="plan"
-                    value={MONTHLY_PLAN_PLATINUM}
-                  />
-                  <Button
-                    submit
-                    tone="success"
-                    variant="primary"
-                    loading={isSubmitting}
-                    fullWidth
-                    size="large"
-                  >
-                    Start Platinum Free Trial
+                    Start 14-Day Free Trial
                   </Button>
                 </Form>
               </Box>
@@ -253,75 +191,53 @@ export default function BillingPage() {
           </Layout.Section>
         </Layout>
 
+        <Box paddingBlockEnd="800">
+          <InlineStack align="space-around" gap="200">
+            <Icon source={CashDollarIcon} tone="base" />
+            <Text as="span" tone="subdued" variant="bodySm">
+              Secure payments processed natively by Shopify. Cancel anytime.
+            </Text>
+          </InlineStack>
+        </Box>
         {/* FEATURE COMPARISON TABLE */}
         <Layout.Section>
           <Card padding="0">
             <Box padding="400">
               <Text as="h2" variant="headingMd">
-                Feature Comparison
+                Plan Comparison
               </Text>
             </Box>
             <IndexTable
               resourceName={{ singular: "feature", plural: "features" }}
-              itemCount={7}
+              itemCount={5}
               headings={[
-                { title: "Power Features" },
-                { title: "Basic", alignment: "center" },
-                { title: "Pro", alignment: "center" },
-                { title: "Platinum AI", alignment: "center" },
+                { title: "Features" },
+                { title: "Basic ($29)", alignment: "center" },
+                { title: "Pro Suite ($49)", alignment: "center" },
               ]}
               selectable={false}
             >
               {[
                 {
                   id: "1",
-                  name: "Product Personalization",
-                  basic: true,
-                  pro: true,
-                  plat: true,
+                  name: "Recovered Revenue Limit",
+                  basic: "Up to $1,000/mo",
+                  pro: "Unlimited",
                 },
                 {
                   id: "2",
-                  name: "Delivery Optimizer (KM/Miles)",
-                  basic: false,
+                  name: "Geofenced Delivery Checking",
+                  basic: true,
                   pro: true,
-                  plat: true,
                 },
                 {
                   id: "3",
-                  name: "Social Proof Widgets",
+                  name: "Autonomous AI Email Generation",
                   basic: false,
                   pro: true,
-                  plat: true,
                 },
-                {
-                  id: "4",
-                  name: "Revenue Analytics Dashboard",
-                  basic: false,
-                  pro: true,
-                  plat: true,
-                },
-                {
-                  id: "5",
-                  name: "Standard Order Recovery",
-                  basic: false,
-                  pro: true,
-                  plat: true,
-                },
-                {
-                  id: "6",
-                  name: "Autonomous AI Cart Recovery",
-                  basic: false,
-                  pro: false,
-                  plat: true,
-                },
-                {
-                  id: "7",
-                  name: "AI A/B Test Optimizer",
-                  basic: false,
-                  pro: false,
-                  plat: true,
-                },
+                { id: "4", name: "A/B Offer Testing", basic: false, pro: true },
+                { id: "5", name: "Support", basic: "Email", pro: "Priority" },
               ].map((row, index) => (
                 <IndexTable.Row id={row.id} key={row.id} position={index}>
                   <IndexTable.Cell>
@@ -331,33 +247,32 @@ export default function BillingPage() {
                   </IndexTable.Cell>
                   <IndexTable.Cell>
                     <div style={{ display: "flex", justifyContent: "center" }}>
-                      {row.basic ? (
-                        <Icon source={CheckCircleIcon} tone="success" />
+                      {typeof row.basic === "boolean" ? (
+                        row.basic ? (
+                          <Icon source={CheckCircleIcon} tone="success" />
+                        ) : (
+                          <Text as="span" tone="subdued">
+                            —
+                          </Text>
+                        )
                       ) : (
-                        <Text as="span" tone="subdued">
-                          —
-                        </Text>
+                        <Text as="span">{row.basic}</Text>
                       )}
                     </div>
                   </IndexTable.Cell>
                   <IndexTable.Cell>
                     <div style={{ display: "flex", justifyContent: "center" }}>
-                      {row.pro ? (
-                        <Icon source={CheckCircleIcon} tone="success" />
+                      {typeof row.pro === "boolean" ? (
+                        row.pro ? (
+                          <Icon source={CheckCircleIcon} tone="success" />
+                        ) : (
+                          <Text as="span" tone="subdued">
+                            —
+                          </Text>
+                        )
                       ) : (
-                        <Text as="span" tone="subdued">
-                          —
-                        </Text>
-                      )}
-                    </div>
-                  </IndexTable.Cell>
-                  <IndexTable.Cell>
-                    <div style={{ display: "flex", justifyContent: "center" }}>
-                      {row.plat ? (
-                        <Icon source={CheckCircleIcon} tone="success" />
-                      ) : (
-                        <Text as="span" tone="subdued">
-                          —
+                        <Text as="span" fontWeight="bold">
+                          {row.pro}
                         </Text>
                       )}
                     </div>
@@ -367,15 +282,6 @@ export default function BillingPage() {
             </IndexTable>
           </Card>
         </Layout.Section>
-
-        <Box paddingBlockEnd="800">
-          <InlineStack align="center" gap="200">
-            <Icon source={CashDollarIcon} tone="base" />
-            <Text as="span" tone="subdued" variant="bodySm">
-              Secure payments processed via Shopify Billing API.
-            </Text>
-          </InlineStack>
-        </Box>
       </BlockStack>
     </Page>
   );

@@ -19,6 +19,7 @@ import {
   ChartVerticalIcon,
   MoneyIcon,
   ViewIcon,
+  MagicIcon, // <--- ADDED MAGIC ICON
 } from "@shopify/polaris-icons";
 
 interface RevenueSuiteProps {
@@ -85,245 +86,299 @@ export function RevenueSuiteTab({
   }, [subject, body, abEnabled, msgA, msgB, fetcher]);
 
   return (
-    <Layout>
-      {/* LEFT COLUMN: Main Controls & Stats */}
-      <Layout.Section>
-        <BlockStack gap="400">
-          {/* YOUR DAILY GOAL */}
-          <Card>
-            <BlockStack gap="200">
-              <InlineStack align="space-between">
-                <Text as="h2" variant="headingMd">
-                  Daily Revenue Goal
-                </Text>
-                <Text as="p" variant="bodyMd" fontWeight="bold">
-                  ${totalRevenue.toFixed(2)} / ${dailyGoal}
-                </Text>
-              </InlineStack>
-              <div
-                style={{
-                  width: "100%",
-                  backgroundColor: "var(--p-color-bg-surface-secondary)",
-                  borderRadius: "10px",
-                  height: "12px",
-                  overflow: "hidden",
-                }}
-              >
+    <Box paddingBlockEnd="800">
+      <Layout>
+        <Layout.Section>
+          <BlockStack gap="400">
+            {/* 👇 NEW AI AGENT STATUS CARD 👇 */}
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <InlineStack gap="200" blockAlign="center">
+                    <Icon source={MagicIcon} tone="magic" />
+                    <Text as="h2" variant="headingMd">
+                      SwiftFlow AI Agent
+                    </Text>
+                  </InlineStack>
+                  <Badge tone={isEnabled ? "success" : "critical"}>
+                    {isEnabled ? "Active & Monitoring" : "Paused"}
+                  </Badge>
+                </InlineStack>
+
+                <Divider />
+
+                <Box>
+                  <InlineStack gap="400" wrap={false}>
+                    <BlockStack gap="100">
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        Current Mission
+                      </Text>
+                      <Text as="p" variant="bodyMd" fontWeight="medium">
+                        Scanning for abandoned carts within{" "}
+                        {data?.deliveryRadius || 10}{" "}
+                        {data?.unitSystem === "METRIC" ? "km" : "miles"}.
+                      </Text>
+                    </BlockStack>
+
+                    <BlockStack gap="100">
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        Drafting Style
+                      </Text>
+                      <Text as="p" variant="bodyMd" fontWeight="medium">
+                        Helpful & Hyper-Local
+                      </Text>
+                    </BlockStack>
+
+                    <BlockStack gap="100">
+                      <Text as="span" variant="bodySm" tone="subdued">
+                        Action Taken
+                      </Text>
+                      <Text as="p" variant="bodyMd" fontWeight="medium">
+                        Autonomous Email Dispatch
+                      </Text>
+                    </BlockStack>
+                  </InlineStack>
+                </Box>
+              </BlockStack>
+            </Card>
+            {/* 👆 END AI AGENT STATUS CARD 👆 */}
+
+            {/* DAILY GOAL */}
+            <Card>
+              <BlockStack gap="200">
+                <InlineStack align="space-between">
+                  <Text as="h2" variant="headingMd">
+                    Daily Revenue Goal
+                  </Text>
+                  <Text as="p" variant="bodyMd" fontWeight="bold">
+                    ${totalRevenue.toFixed(2)} / ${dailyGoal}
+                  </Text>
+                </InlineStack>
                 <div
                   style={{
-                    width: `${goalProgress}%`,
-                    backgroundColor: "var(--p-color-text-success)",
-                    height: "100%",
-                    transition: "width 0.5s",
+                    width: "100%",
+                    backgroundColor: "var(--p-color-bg-surface-secondary)",
+                    borderRadius: "10px",
+                    height: "12px",
+                    overflow: "hidden",
                   }}
-                />
-              </div>
-            </BlockStack>
-          </Card>
-
-          {/* YOUR MASTER TOGGLE */}
-          <Card>
-            <BlockStack gap="400">
-              <InlineStack align="space-between">
-                <InlineStack gap="200">
-                  <Icon source={ProductIcon} tone="base" />
-                  <Text as="h2" variant="headingMd">
-                    Revenue Suite Master Control
-                  </Text>
-                </InlineStack>
-                <Badge tone={isEnabled ? "success" : "critical"}>
-                  {isEnabled ? "Live on Store" : "Paused"}
-                </Badge>
-              </InlineStack>
-              <Button
-                tone={isEnabled ? "critical" : "success"}
-                variant="primary"
-                loading={isSaving}
-                onClick={handleToggle}
-              >
-                {isEnabled ? "Disable Revenue Suite" : "Enable Revenue Suite"}
-              </Button>
-            </BlockStack>
-          </Card>
-
-          {/* YOUR STAT BOXES */}
-          <Card>
-            <BlockStack gap="500">
-              <InlineStack align="space-between">
-                <InlineStack gap="300" blockAlign="center">
-                  <Icon source={ChartVerticalIcon} tone="base" />
-                  <Text as="h2" variant="headingMd">
-                    Performance Analytics
-                  </Text>
-                </InlineStack>
-                {shop === "sreeraj-dev-lab.myshopify.com" && (
-                  <Button
-                    tone="critical"
-                    variant="tertiary"
-                    size="slim"
-                    onClick={onResetData}
-                  >
-                    Reset Test Data
-                  </Button>
-                )}
-              </InlineStack>
-              <InlineStack gap="400">
-                <StatBox
-                  label="Est. Revenue Boost"
-                  value={`$${totalRevenue.toLocaleString()}`}
-                  icon={MoneyIcon}
-                  tone="success"
-                  color="var(--p-color-text-success)"
-                />
-                <StatBox
-                  label="Conversion Lift"
-                  value={`${conversionRate}%`}
-                  icon={ChartVerticalIcon}
-                  tone="base"
-                  color="var(--p-color-text-info)"
-                />
-                <StatBox
-                  label="Live Impressions"
-                  value={totalViews.toLocaleString()}
-                  icon={ViewIcon}
-                  tone="base"
-                  color="var(--p-color-text-secondary)"
-                />
-              </InlineStack>
-            </BlockStack>
-          </Card>
-
-          {/* YOUR RECENT CONVERSIONS (Fixed Schema Mapping) */}
-          <Card padding="0">
-            <Box padding="400">
-              <Text as="h2" variant="headingMd">
-                Recent Conversions
-              </Text>
-            </Box>
-            <IndexTable
-              resourceName={{ singular: "conversion", plural: "conversions" }}
-              itemCount={recentConversions.length}
-              headings={[
-                { title: "Date" },
-                { title: "Order ID" },
-                { title: "Revenue", alignment: "end" },
-              ]}
-              selectable={false}
-            >
-              {recentConversions.map((conv, index) => (
-                <IndexTable.Row
-                  id={conv.id.toString()}
-                  key={conv.id}
-                  position={index}
                 >
-                  <IndexTable.Cell>
-                    {new Date(conv.createdAt).toLocaleTimeString()}
-                  </IndexTable.Cell>
-                  <IndexTable.Cell>
-                    {conv.orderId?.split("/").pop() || "N/A"}
-                  </IndexTable.Cell>
-                  <IndexTable.Cell>
-                    <div style={{ textAlign: "right" }}>
-                      <Text as="span" fontWeight="bold" tone="success">
-                        +${conv.orderValue.toFixed(2)}
-                      </Text>
-                    </div>
-                  </IndexTable.Cell>
-                </IndexTable.Row>
-              ))}
-            </IndexTable>
-          </Card>
-        </BlockStack>
-      </Layout.Section>
+                  <div
+                    style={{
+                      width: `${goalProgress}%`,
+                      backgroundColor: "var(--p-color-text-success)",
+                      height: "100%",
+                      transition: "width 0.5s",
+                    }}
+                  />
+                </div>
+              </BlockStack>
+            </Card>
 
-      {/* RIGHT COLUMN: Claude's Configuration Features */}
-      <Layout.Section variant="oneThird">
-        <BlockStack gap="400">
-          {/* CLAUDE'S EMAIL CONFIG */}
-          <Card>
-            <BlockStack gap="400">
-              <Text as="h2" variant="headingMd">
-                Recovery Email Copy
-              </Text>
-              <Divider />
-              <TextField
-                label="Email Subject"
-                value={subject}
-                onChange={setSubject}
-                autoComplete="off"
-              />
-              <TextField
-                label="Email Body"
-                value={body}
-                onChange={setBody}
-                multiline={4}
-                autoComplete="off"
-                helpText="Use plain text. The customer's exact cart will be appended by the AI automatically."
-              />
-              <Button
-                variant="primary"
-                loading={isLocalSaving}
-                onClick={handleSaveConfig}
-              >
-                Save Configuration
-              </Button>
-            </BlockStack>
-          </Card>
+            {/* MASTER TOGGLE */}
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between">
+                  <InlineStack gap="200">
+                    <Icon source={ProductIcon} tone="base" />
+                    <Text as="h2" variant="headingMd">
+                      Revenue Suite Master Control
+                    </Text>
+                  </InlineStack>
+                  <Badge tone={isEnabled ? "success" : "critical"}>
+                    {isEnabled ? "Live on Store" : "Paused"}
+                  </Badge>
+                </InlineStack>
+                <Button
+                  tone={isEnabled ? "critical" : "success"}
+                  variant="primary"
+                  loading={isSaving}
+                  onClick={handleToggle}
+                >
+                  {isEnabled ? "Disable Revenue Suite" : "Enable Revenue Suite"}
+                </Button>
+              </BlockStack>
+            </Card>
 
-          {/* CLAUDE'S A/B TESTING */}
-          <Card>
-            <BlockStack gap="400">
-              <InlineStack align="space-between" blockAlign="center">
+            {/* YOUR STAT BOXES */}
+            <Card>
+              <BlockStack gap="500">
+                <InlineStack align="space-between">
+                  <InlineStack gap="300" blockAlign="center">
+                    <Icon source={ChartVerticalIcon} tone="base" />
+                    <Text as="h2" variant="headingMd">
+                      Performance Analytics
+                    </Text>
+                  </InlineStack>
+                  {shop === "sreeraj-dev-lab.myshopify.com" && (
+                    <Button
+                      tone="critical"
+                      variant="tertiary"
+                      size="slim"
+                      onClick={onResetData}
+                    >
+                      Reset Test Data
+                    </Button>
+                  )}
+                </InlineStack>
+                <InlineStack gap="400">
+                  <StatBox
+                    label="Est. Revenue Boost"
+                    value={`$${totalRevenue.toLocaleString()}`}
+                    icon={MoneyIcon}
+                    tone="success"
+                    color="var(--p-color-text-success)"
+                  />
+                  <StatBox
+                    label="Conversion Lift"
+                    value={`${conversionRate}%`}
+                    icon={ChartVerticalIcon}
+                    tone="base"
+                    color="var(--p-color-text-info)"
+                  />
+                  <StatBox
+                    label="Live Impressions"
+                    value={totalViews.toLocaleString()}
+                    icon={ViewIcon}
+                    tone="base"
+                    color="var(--p-color-text-secondary)"
+                  />
+                </InlineStack>
+              </BlockStack>
+            </Card>
+
+            {/* YOUR RECENT CONVERSIONS (Fixed Schema Mapping) */}
+            <Card padding="0">
+              <Box padding="400">
                 <Text as="h2" variant="headingMd">
-                  A/B Testing
+                  Recent Conversions
                 </Text>
-                <Badge tone={abEnabled ? "success" : "attention"}>
-                  {abEnabled ? "Active" : "Inactive"}
-                </Badge>
-              </InlineStack>
-              <Divider />
-              <Text as="p" tone="subdued" variant="bodySm">
-                Test two delivery messages. Customers will randomly see one
-                variant.
-              </Text>
-
-              <Button
-                variant={abEnabled ? "primary" : "secondary"}
-                onClick={() => setAbEnabled(!abEnabled)}
+              </Box>
+              <IndexTable
+                resourceName={{ singular: "conversion", plural: "conversions" }}
+                itemCount={recentConversions.length}
+                headings={[
+                  { title: "Date" },
+                  { title: "Order ID" },
+                  { title: "Revenue", alignment: "end" },
+                ]}
+                selectable={false}
               >
-                {abEnabled ? "Disable A/B Testing" : "Enable A/B Testing"}
-              </Button>
+                {recentConversions.map((conv, index) => (
+                  <IndexTable.Row
+                    id={conv.id.toString()}
+                    key={conv.id}
+                    position={index}
+                  >
+                    <IndexTable.Cell>
+                      {new Date(conv.createdAt).toLocaleTimeString()}
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      {conv.orderId?.split("/").pop() || "N/A"}
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      <div style={{ textAlign: "right" }}>
+                        <Text as="span" fontWeight="bold" tone="success">
+                          +${conv.orderValue.toFixed(2)}
+                        </Text>
+                      </div>
+                    </IndexTable.Cell>
+                  </IndexTable.Row>
+                ))}
+              </IndexTable>
+            </Card>
+          </BlockStack>
+        </Layout.Section>
 
-              <InlineGrid columns={2} gap="400">
+        {/* RIGHT COLUMN: Claude's Configuration Features */}
+        <Layout.Section variant="oneThird">
+          <BlockStack gap="400">
+            {/* CLAUDE'S EMAIL CONFIG */}
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">
+                  Recovery Email Copy
+                </Text>
+                <Divider />
                 <TextField
-                  label="Message A (50%)"
-                  value={msgA}
-                  onChange={setMsgA}
+                  label="Email Subject"
+                  value={subject}
+                  onChange={setSubject}
                   autoComplete="off"
-                  disabled={!abEnabled}
                 />
                 <TextField
-                  label="Message B (50%)"
-                  value={msgB}
-                  onChange={setMsgB}
+                  label="Email Body"
+                  value={body}
+                  onChange={setBody}
+                  multiline={4}
                   autoComplete="off"
-                  disabled={!abEnabled}
+                  helpText="Use plain text. The customer's exact cart will be appended by the AI automatically."
                 />
-              </InlineGrid>
+                <Button
+                  variant="primary"
+                  loading={isLocalSaving}
+                  onClick={handleSaveConfig}
+                >
+                  Save Configuration
+                </Button>
+              </BlockStack>
+            </Card>
 
-              <Button
-                variant="primary"
-                loading={isLocalSaving}
-                onClick={handleSaveConfig}
-                disabled={!abEnabled}
-              >
-                Save A/B Test
-              </Button>
-            </BlockStack>
-          </Card>
-        </BlockStack>
-      </Layout.Section>
-    </Layout>
+            {/* CLAUDE'S A/B TESTING */}
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="h2" variant="headingMd">
+                    A/B Testing
+                  </Text>
+                  <Badge tone={abEnabled ? "success" : "attention"}>
+                    {abEnabled ? "Active" : "Inactive"}
+                  </Badge>
+                </InlineStack>
+                <Divider />
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Test two delivery messages. Customers will randomly see one
+                  variant.
+                </Text>
+
+                <Button
+                  variant={abEnabled ? "primary" : "secondary"}
+                  onClick={() => setAbEnabled(!abEnabled)}
+                >
+                  {abEnabled ? "Disable A/B Testing" : "Enable A/B Testing"}
+                </Button>
+
+                <InlineGrid columns={2} gap="400">
+                  <TextField
+                    label="Message A (50%)"
+                    value={msgA}
+                    onChange={setMsgA}
+                    autoComplete="off"
+                    disabled={!abEnabled}
+                  />
+                  <TextField
+                    label="Message B (50%)"
+                    value={msgB}
+                    onChange={setMsgB}
+                    autoComplete="off"
+                    disabled={!abEnabled}
+                  />
+                </InlineGrid>
+
+                <Button
+                  variant="primary"
+                  loading={isLocalSaving}
+                  onClick={handleSaveConfig}
+                  disabled={!abEnabled}
+                >
+                  Save A/B Test
+                </Button>
+              </BlockStack>
+            </Card>
+          </BlockStack>
+        </Layout.Section>
+      </Layout>
+    </Box>
   );
 }
 

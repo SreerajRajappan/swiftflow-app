@@ -1,6 +1,6 @@
 # Production Configuration for SwiftFlow
 client_id = "0d40a8f7944ea05b2170a6853a984afb"
-name = "SwiftFlow: Revenue Suite"
+name = "SwiftFlow: Local Cart Recovery"
 application_url = "https://swiftflow.logiclooms.io"
 embedded = true
 
@@ -19,7 +19,8 @@ api_version = "2026-04"
   uri = "/webhooks/app/uninstalled"
 
 [access_scopes]
-scopes = "read_locations,write_orders,read_customers,write_app_proxy,write_products,read_cart_transforms"
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_locations,read_orders,read_checkouts,read_customers,write_app_proxy,write_products"
 
 [auth]
 redirect_urls = [
@@ -34,5 +35,9 @@ subpath = "swiftflow-revenue"
 prefix = "apps"
 
 [[webhooks.subscriptions]]
-topics = [ "carts/update" ]
-uri = "/webhooks/carts/update"
+  topics = [ "checkouts/update" ]
+  uri = "/webhooks/checkouts/update"
+
+[[webhooks.subscriptions]]
+  topics = [ "orders/create" ]
+  uri = "/webhooks/orders/create"

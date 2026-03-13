@@ -28,9 +28,9 @@ const shopify = shopifyApp({
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/orders/create",
     },
-    CARTS_UPDATE: {
+    CHECKOUTS_UPDATE: {
       deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/carts/update",
+      callbackUrl: "/webhooks/checkouts/update",
     },
   },
   hooks: {
@@ -39,33 +39,23 @@ const shopify = shopifyApp({
     },
   },
   billing: {
-    BASIC: {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
-      lineItems: [
-        {
-          amount: 9.99,
-          currencyCode: "USD",
-          interval: BillingInterval.Every30Days,
-        },
-      ],
-    },
-    PRO: {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
-      trialDays: 7,
-      lineItems: [
-        {
-          amount: 29.99,
-          currencyCode: "USD",
-          interval: BillingInterval.Every30Days,
-        },
-      ],
-    },
-    PLATINUM: {
+    "Basic Plan": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       trialDays: 14,
       lineItems: [
         {
-          amount: 49.99,
+          amount: 29.0,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        },
+      ],
+    },
+    "Pro Plan": {
+      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      trialDays: 14,
+      lineItems: [
+        {
+          amount: 49.0,
           currencyCode: "USD",
           interval: BillingInterval.Every30Days,
         },

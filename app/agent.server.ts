@@ -6,32 +6,6 @@ import db from "./db.server";
 const openai = new OpenAI();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// export async function fireTestEmail(targetEmail: string) {
-//   console.log(`Attempting to send test email to ${targetEmail}...`);
-
-//   try {
-//     const data = await resend.emails.send({
-//       from: "SwiftFlow AI <hello@logiclooms.io>",
-//       to: targetEmail,
-//       subject: "🚀 SwiftFlow Infrastructure is LIVE",
-//       html: `
-//         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-//           <h2>Hello from LogicLooms!</h2>
-//           <p>This is a live test from your newly verified <strong>logiclooms.io</strong> domain.</p>
-//           <p>If you are reading this in your inbox, your DNS, DKIM, SPF, and MX records are perfectly configured, and the Resend API is securely connected to your Remix app.</p>
-//           <p>Great work, Lead Developer.</p>
-//         </div>
-//       `,
-//     });
-
-//     console.log("✅ Email sent successfully:", data);
-//     return { success: true, data };
-//   } catch (error) {
-//     console.error("❌ Failed to send email:", error);
-//     return { success: false, error };
-//   }
-// }
-
 export async function runCartRecoveryAgent() {
   console.log("🤖 [AI Agent] Waking up to check for abandoned carts...");
 
@@ -54,11 +28,28 @@ export async function runCartRecoveryAgent() {
     console.log(`🤖 [AI Agent] Found ${pendingCarts.length} carts to process.`);
 
     for (const cart of pendingCarts) {
+      // --- NEW: Find the associated Revenue Leak to keep the UI in sync ---
+      const leaks = await db.revenueLeak.findMany({
+        where: { shop: cart.shop },
+      });
+      // Find the most recent leak matching this cart token
+      const currentLeak = leaks
+        .reverse()
+        .find((l) => (l.metadata as any)?.cartToken === cart.cartToken);
+
       // 2. Lock the cart immediately
       await db.cartRecovery.update({
         where: { id: cart.id },
         data: { agentStatus: "PROCESSING" },
       });
+
+      // Show "Agent Working" in the UI
+      if (currentLeak) {
+        await db.revenueLeak.update({
+          where: { id: currentLeak.id },
+          data: { status: "AGENT_WORKING" },
+        });
+      }
 
       // 3. Validate we have an email address to send to
       if (!cart.customerEmail) {
@@ -132,6 +123,14 @@ export async function runCartRecoveryAgent() {
               emailSentAt: new Date(),
             },
           });
+
+          // --- NEW: Sync the UI table to show the "Recovered" badge ---
+          if (currentLeak) {
+            await db.revenueLeak.update({
+              where: { id: currentLeak.id },
+              data: { status: "COMPLETED" },
+            });
+          }
 
           console.log(
             `✅ [AI Agent] Successfully sent recovery email to ${cart.customerEmail}`,

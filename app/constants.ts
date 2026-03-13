@@ -1,4 +1,3 @@
 //constants.ts
-export const MONTHLY_PLAN_BASIC = "BASIC";
-export const MONTHLY_PLAN_PRO = "PRO";
-export const MONTHLY_PLAN_PLATINUM = "PLATINUM";
+export const MONTHLY_PLAN_BASIC = "Basic Plan";
+export const MONTHLY_PLAN_PRO = "Pro Plan";
