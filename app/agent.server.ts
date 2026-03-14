@@ -2,7 +2,6 @@ import { OpenAI } from "openai";
 import { Resend } from "resend";
 import db from "./db.server";
 
-// Initialize OpenAI and Resend
 const openai = new OpenAI();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -110,7 +109,16 @@ export async function runCartRecoveryAgent(shop?: string) {
           .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
           .join(" ");
         const cartUrl = `https://${cart.shop}/cart`;
-        const finalEmailBody = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
+
+        // 1. Create a safe HTML version so the link is perfectly formatted and clickable
+        const finalEmailHtml = `
+          <p>${generatedEmailBody.replace(/\n/g, "<br/>")}</p>
+          <br/>
+          <p>Resume your order here: <a href="${cartUrl}">${cartUrl}</a></p>
+        `;
+
+        // 2. Keep the plain text as a fallback
+        const finalEmailText = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
 
         // 8. DISPATCH: Send the actual email via Resend
         try {
@@ -120,7 +128,8 @@ export async function runCartRecoveryAgent(shop?: string) {
             subject:
               settings.recoveryEmailSubject ||
               "We're headed your way! Finish your order?",
-            text: finalEmailBody,
+            html: finalEmailHtml,
+            text: finalEmailText,
           });
 
           // 9. UPDATE: Mark as sent and record the AI's work
@@ -128,7 +137,7 @@ export async function runCartRecoveryAgent(shop?: string) {
             where: { id: cart.id },
             data: {
               agentStatus: "COMPLETED",
-              generatedEmail: generatedEmailBody,
+              generatedEmail: finalEmailText,
               emailSent: true,
               emailSentAt: new Date(),
             },
