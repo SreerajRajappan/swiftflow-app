@@ -115,10 +115,12 @@ export function RevenueLeaksTab({
     }
 
     return [
-      <InlineStack key={`details-${leak.id}`} gap="200" align="start">
-        {leak.severity === "CRITICAL" && (
-          <Icon source={AlertDiamondIcon} tone="critical" />
-        )}
+      <InlineStack key={`details-${leak.id}`} align="start">
+        <div style={{ width: "40px", flexShrink: 0 }}>
+          {leak.severity === "CRITICAL" && (
+            <Icon source={AlertDiamondIcon} tone="critical" />
+          )}
+        </div>
         <BlockStack>
           <Text as="span" variant="bodyMd" fontWeight="bold">
             {leak.title}
@@ -126,6 +128,12 @@ export function RevenueLeaksTab({
           <Text as="span" variant="bodySm" tone="subdued">
             {leak.metadata?.customerEmail || "Anonymous Visitor"}
           </Text>
+          {leak.metadata?.distanceMiles && (
+            <InlineStack gap="100" align="center">
+              <Badge tone="info" />
+              📍 {Number(leak.metadata.distanceMiles).toFixed(1)} miles away
+            </InlineStack>
+          )}
         </BlockStack>
       </InlineStack>,
       <Badge key={`sev-${leak.id}`} tone={tone}>
@@ -144,57 +152,59 @@ export function RevenueLeaksTab({
     .reduce((sum, leak) => sum + (leak.potentialValue || 0), 0);
 
   return (
-    <BlockStack gap="400">
-      {totalAtRisk > 0 && (
-        <Card background="bg-surface-critical">
-          <BlockStack gap="400">
-            <BlockStack gap="200">
-              <Text as="h2" variant="headingMd" tone="critical">
-                Immediate Attention Required
-              </Text>
-              <Text as="p" variant="bodyMd">
-                There is currently <strong>${totalAtRisk.toFixed(2)}</strong> in
-                abandoned high-value carts. Your AI Agent is ready to analyze
-                these and dispatch targeted recovery emails.
-              </Text>
+    <Box paddingBlockEnd={"800"}>
+      <BlockStack gap="400">
+        {totalAtRisk > 0 && (
+          <Card background="bg-surface-critical">
+            <BlockStack gap="400">
+              <BlockStack gap="200">
+                <Text as="h2" variant="headingMd" tone="critical">
+                  Immediate Attention Required
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  There is currently <strong>${totalAtRisk.toFixed(2)}</strong>{" "}
+                  in abandoned high-value carts. Your AI Agent is ready to
+                  analyze these and dispatch targeted recovery emails.
+                </Text>
+              </BlockStack>
+              <InlineStack>
+                <Button
+                  variant="primary"
+                  icon={PlayIcon}
+                  onClick={onRunScan}
+                  loading={isScanning}
+                >
+                  Dispatch AI Agent Now
+                </Button>
+              </InlineStack>
             </BlockStack>
-            <InlineStack>
-              <Button
-                variant="primary"
-                icon={PlayIcon}
-                onClick={onRunScan}
-                loading={isScanning}
-              >
-                Dispatch AI Agent Now
+          </Card>
+        )}
+
+        <Card>
+          <BlockStack gap="400">
+            <InlineStack align="space-between" blockAlign="center">
+              <Text as="h3" variant="headingMd">
+                Active Revenue Leaks
+              </Text>
+              <Button icon={PlayIcon} onClick={onRunScan} loading={isScanning}>
+                Run AI Agent Scan
               </Button>
             </InlineStack>
+            <DataTable
+              columnContentTypes={["text", "text", "numeric", "text", "text"]}
+              headings={[
+                "Leak Details",
+                "Severity",
+                "Potential Value",
+                "Agent Status",
+                "Detected On",
+              ]}
+              rows={tableRows}
+            />
           </BlockStack>
         </Card>
-      )}
-
-      <Card>
-        <BlockStack gap="400">
-          <InlineStack align="space-between" blockAlign="center">
-            <Text as="h3" variant="headingMd">
-              Active Revenue Leaks
-            </Text>
-            <Button icon={PlayIcon} onClick={onRunScan} loading={isScanning}>
-              Run AI Agent Scan
-            </Button>
-          </InlineStack>
-          <DataTable
-            columnContentTypes={["text", "text", "numeric", "text", "text"]}
-            headings={[
-              "Leak Details",
-              "Severity",
-              "Potential Value",
-              "Agent Status",
-              "Detected On",
-            ]}
-            rows={tableRows}
-          />
-        </BlockStack>
-      </Card>
-    </BlockStack>
+      </BlockStack>
+    </Box>
   );
 }

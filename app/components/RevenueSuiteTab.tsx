@@ -13,6 +13,7 @@ import {
   TextField,
   Divider,
   InlineGrid,
+  Select,
 } from "@shopify/polaris";
 import {
   ProductIcon,
@@ -41,6 +42,30 @@ interface RevenueSuiteProps {
   navigate: (path: string) => void;
 }
 
+const TEMPLATES = {
+  neighborhood: {
+    subject: "Good news! We deliver right to your neighborhood 🏡",
+    basicBody:
+      "You left some great items in your cart! The good news is you are well within our local delivery zone. Complete your order today and we'll bring it right to your door.",
+    proBody:
+      "Write a friendly, neighborly email letting the customer know they left items behind. Emphasize that because they live in our local delivery zone, we can get their specific cart items delivered to them quickly. Keep the tone warm and helpful.",
+  },
+  fresh: {
+    subject: "Craving something? Let us bring it to your door 🚚",
+    basicBody:
+      "Don't miss out! Your cart is waiting, and our team is ready to prep and deliver your order straight to your door. Click here to finish checking out so we can get started.",
+    proBody:
+      "Draft an enticing, slightly urgent message. Mention that we verified their address is within our fast-delivery radius. Encourage them to complete their order so we can start preparing their items fresh and dispatch our local driver.",
+  },
+  save_trip: {
+    subject: "Save yourself a trip! Local delivery is available.",
+    basicBody:
+      "Why drive when we can deliver? You left some items in your cart, and we offer fast local delivery right to your area. Finish your order and let us do the heavy lifting.",
+    proBody:
+      "Create a helpful, service-oriented email. Point out that we offer local delivery to their specific area, saving them a trip to the store. Seamlessly mention the items in their cart and offer to bring everything directly to them to save them time.",
+  },
+};
+
 export function RevenueSuiteTab({
   data,
   fetcher,
@@ -58,24 +83,49 @@ export function RevenueSuiteTab({
   isPro,
   navigate,
 }: RevenueSuiteProps) {
+  const [template, setTemplate] = useState("custom");
   const [subject, setSubject] = useState(
     data?.recoveryEmailSubject || "Good news! We deliver to you!",
   );
   const [body, setBody] = useState(
     data?.recoveryEmailBody ||
-      "You left something behind! We deliver directly to your area. Come back and complete your order.",
+      "You left something behind! Great news — we deliver directly to your area. Come back and complete your order.",
   );
   const [abEnabled, setAbEnabled] = useState(data?.abTestEnabled || false);
   const [msgA, setMsgA] = useState(
-    data?.abTestMessageA || "We deliver to your area!",
+    data?.abTestMessageA ||
+      "Good news! You're right in our local delivery zone 🏡",
   );
   const [msgB, setMsgB] = useState(
-    data?.abTestMessageB || "Fast local delivery available!",
+    data?.abTestMessageB ||
+      "Your address qualifies for our special local delivery!",
   );
 
   const isLocalSaving =
     fetcher.state === "submitting" &&
     fetcher.formData?.get("intent") === "save-suite-config";
+
+  const handleTemplateChange = useCallback(
+    (value: string) => {
+      setTemplate(value);
+      if (value !== "custom") {
+        const selected = TEMPLATES[value as keyof typeof TEMPLATES];
+        setSubject(selected.subject);
+        setBody(isPro ? selected.proBody : selected.basicBody);
+      }
+    },
+    [isPro],
+  );
+
+  const handleSubjectChange = useCallback((value: string) => {
+    setSubject(value);
+    setTemplate("custom"); // Switch to custom if user manually edits
+  }, []);
+
+  const handleBodyChange = useCallback((value: string) => {
+    setBody(value);
+    setTemplate("custom"); // Switch to custom if user manually edits
+  }, []);
 
   const handleSaveConfig = useCallback(() => {
     const form = new FormData();
@@ -87,6 +137,13 @@ export function RevenueSuiteTab({
     form.append("abTestMessageB", msgB);
     fetcher.submit(form, { method: "post" });
   }, [subject, body, abEnabled, msgA, msgB, fetcher]);
+
+  const templateOptions = [
+    { label: "Custom / Manual Entry", value: "custom" },
+    { label: "The Neighborhood (Warm & Community)", value: "neighborhood" },
+    { label: "Fresh & Fast (Restaurants & Florists)", value: "fresh" },
+    { label: "Save a Trip (Hardware & Supply)", value: "save_trip" },
+  ];
 
   return (
     <Box paddingBlockEnd="800">
@@ -118,8 +175,8 @@ export function RevenueSuiteTab({
                           Current Mission
                         </Text>
                         <Text as="p" variant="bodyMd" fontWeight="medium">
-                          Scanning for abandoned carts within{" "}
-                          {data?.deliveryRadius || 10}{" "}
+                          Verifying delivery radiuses and scanning for abandoned
+                          carts ({">"}$50) within {data?.deliveryRadius || 10}{" "}
                           {data?.unitSystem === "METRIC" ? "km" : "miles"}.
                         </Text>
                       </BlockStack>
@@ -161,8 +218,8 @@ export function RevenueSuiteTab({
                   <Box>
                     <Text as="p" variant="bodyMd" tone="subdued">
                       Upgrade to Pro to unlock our autonomous AI agent that
-                      detects high-value abandoned carts and generates highly
-                      personalized, contextual recovery emails.
+                      verifies customer locations against your delivery radius
+                      and generates hyper-personalized recovery emails.
                     </Text>
                   </Box>
                   <Button
@@ -232,7 +289,7 @@ export function RevenueSuiteTab({
               </BlockStack>
             </Card>
 
-            {/* YOUR STAT BOXES */}
+            {/* STAT BOXES */}
             <Card>
               <BlockStack gap="500">
                 <InlineStack align="space-between">
@@ -279,7 +336,7 @@ export function RevenueSuiteTab({
               </BlockStack>
             </Card>
 
-            {/* YOUR RECENT CONVERSIONS */}
+            {/* RECENT CONVERSIONS */}
             <Card padding="0">
               <Box padding="400">
                 <Text as="h2" variant="headingMd">
@@ -328,26 +385,39 @@ export function RevenueSuiteTab({
             {/* EMAIL CONFIG */}
             <Card>
               <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">
-                  Recovery Email Copy
-                </Text>
+                <InlineStack gap="200" blockAlign="center">
+                  {isPro && <Icon source={MagicIcon} tone="magic" />}
+                  <Text as="h2" variant="headingMd">
+                    {isPro
+                      ? "AI Delivery Email Guidelines"
+                      : "Recovery Email Copy"}
+                  </Text>
+                </InlineStack>
                 <Divider />
+
+                <Select
+                  label="Message Template"
+                  options={templateOptions}
+                  onChange={handleTemplateChange}
+                  value={template}
+                />
+
                 <TextField
                   label="Email Subject"
                   value={subject}
-                  onChange={setSubject}
+                  onChange={handleSubjectChange}
                   autoComplete="off"
                 />
                 <TextField
-                  label="Email Body"
+                  label={isPro ? "Core Message / AI Prompt" : "Email Body"}
                   value={body}
-                  onChange={setBody}
+                  onChange={handleBodyChange}
                   multiline={4}
                   autoComplete="off"
                   helpText={
                     isPro
-                      ? "The AI Agent will use this as a base and append the cart context."
-                      : "This text will be sent to the customer if cart recovery is enabled."
+                      ? "The AI Agent will use this core message, combine it with the customer's specific cart items, and highlight their verified local delivery zone to draft a highly personalized email."
+                      : "This exact text will be sent to the customer if cart recovery is enabled."
                   }
                 />
                 <Button

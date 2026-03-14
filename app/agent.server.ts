@@ -1,6 +1,7 @@
 import { OpenAI } from "openai";
 import { Resend } from "resend";
 import db from "./db.server";
+import { estimateDeliveryTime } from "./services/proximity.server";
 
 const openai = new OpenAI();
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -82,13 +83,28 @@ export async function runCartRecoveryAgent(shop?: string) {
           ? settings.abTestMessageA
           : settings.abTestMessageB;
 
-      // 7. Generate the AI Content
+      // Extract Distance and Calculate ETA
+      const distanceMiles = (currentLeak?.metadata as any)?.distanceMiles;
+      let distanceContext = "They live in our local delivery zone.";
+      let etaContext = "";
+
+      if (distanceMiles) {
+        distanceContext = `They are exactly ${distanceMiles.toFixed(1)} miles away from our store.`;
+        etaContext = `Estimated delivery time for their address is ${estimateDeliveryTime(distanceMiles)}.`;
+      }
+
+      // 7. Generate the Hyper-Local AI Content
       const prompt = `
-        You are an expert e-commerce copywriter for a store named ${cart.shop}. 
+        You are an expert e-commerce copywriter for a local store named ${cart.shop}. 
         A customer just abandoned their cart containing: ${productNames}.
-        They live in our local delivery zone. 
+        
+        CRITICAL CONTEXT:
+        - ${distanceContext}
+        - ${etaContext}
 
         Write a warm, 3-sentence email to encourage them to complete their $${cart.cartValue} order.
+        Make sure to emphasize how close they are to the store to highlight fast local delivery.
+        If an estimated delivery time is provided above, explicitly mention it (e.g., "We can have this to your door in [ETA]").
         Include this specific offer seamlessly: "${abMessage}"
         
         No subject line. Just the email body.
@@ -110,14 +126,12 @@ export async function runCartRecoveryAgent(shop?: string) {
           .join(" ");
         const cartUrl = `https://${cart.shop}/cart`;
 
-        // 1. Create a safe HTML version so the link is perfectly formatted and clickable
         const finalEmailHtml = `
           <p>${generatedEmailBody.replace(/\n/g, "<br/>")}</p>
           <br/>
           <p>Resume your order here: <a href="${cartUrl}">${cartUrl}</a></p>
         `;
 
-        // 2. Keep the plain text as a fallback
         const finalEmailText = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
 
         // 8. DISPATCH: Send the actual email via Resend
@@ -143,7 +157,6 @@ export async function runCartRecoveryAgent(shop?: string) {
             },
           });
 
-          // --- Sync the UI table to show the "Email Sent" badge ---
           if (currentLeak) {
             await db.revenueLeak.update({
               where: { id: currentLeak.id },

@@ -38,12 +38,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     for (const { shop } of activeShops) {
       console.log(`\n🔄 Processing Shop: ${shop}`);
 
-      // Phase 1: Scan for cold carts and flag as ANALYZING
-      await processAbandonedCarts(shop);
+      const promises = activeShops.map(async ({ shop }) => {
+        await processAbandonedCarts(shop);
+        // Don't await the agent here if possible, or run them in parallel
+        return runCartRecoveryAgent(shop);
+      });
 
-      // Phase 2: AI Agent writes and sends the emails
-      // (Assuming runCartRecoveryAgent also expects the shop string!)
-      await runCartRecoveryAgent(shop);
+      await Promise.all(promises);
     }
 
     return json(

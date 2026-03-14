@@ -101,6 +101,14 @@ export default function DeliveryTab({
           },
         );
 
+        // Drop the Pin at the store's exact location
+        new (window as any).google.maps.Marker({
+          position: center,
+          map: mapInstanceRef.current,
+          title: "Your Store",
+          animation: (window as any).google.maps.Animation.DROP, // Adds a nice drop-in animation
+        });
+
         // Initialize Circle
         circleRef.current = new (window as any).google.maps.Circle({
           map: mapInstanceRef.current,
