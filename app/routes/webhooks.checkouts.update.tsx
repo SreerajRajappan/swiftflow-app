@@ -39,18 +39,24 @@ export async function action({ request }: ActionFunctionArgs) {
     const settings = await db.appSettings.findFirst({ where: { shop } });
 
     if (!settings?.revenueSuiteEnabled) {
+      console.log("DEBUG: Skip - Revenue Suite is DISABLED in settings");
       return json({ success: true, skipped: "suite_disabled" });
     }
 
     if (!settings.storeLat || !settings.storeLng) {
+      console.log("DEBUG: Skip - Store location is missing");
       return json({ success: true, skipped: "store_location_missing" });
     }
 
     // FILTER: We only want to track checkouts that have an email!
     if (!customerEmail) {
+      console.log("DEBUG: Skip - No customer email found");
       return json({ success: true, skipped: "no_email" });
     }
-
+    const radiusMiles = getRadiusInMiles(
+      settings.deliveryRadius,
+      settings.unitSystem,
+    );
     // Resolve customer coordinates
     let customerLat: number | null = null;
     let customerLng: number | null = null;
@@ -93,6 +99,14 @@ export async function action({ request }: ActionFunctionArgs) {
         ? "A"
         : "B"
       : null;
+
+    // 👇 Update the variable name from deliveryRadiusMiles to radiusMiles
+    console.log(`\n🔥 [WEBHOOK] Processing Checkout Update...`);
+    console.log(`🌍 [GEO] Customer Address: ${customerAddress}`);
+    console.log(
+      `📏 [GEO] Distance: ${distance?.toFixed(2) || "N/A"} miles | Radius: ${radiusMiles} miles`,
+    );
+    console.log(`🎯 [GEO] In Zone? ${inDeliveryZone}`);
 
     // Upsert cart recovery record - quietly queueing it for the AI Agent
     await db.cartRecovery.upsert({

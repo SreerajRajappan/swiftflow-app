@@ -102,15 +102,22 @@ export async function runCartRecoveryAgent() {
       const generatedEmailBody = response.choices[0]?.message?.content?.trim();
 
       if (generatedEmailBody) {
+        const storeName = cart.shop
+          .split(".")[0]
+          .split("-")
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(" ");
+        const cartUrl = `https://${cart.shop}/cart`;
+        const finalEmailBody = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
         // 8. DISPATCH: Send the actual email via Resend
         try {
           await resend.emails.send({
-            from: "SwiftFlow <hello@logiclooms.io>",
+            from: `${storeName} <hello@logiclooms.io>`,
             to: cart.customerEmail,
             subject:
               settings.recoveryEmailSubject ||
               "We're headed your way! Finish your order?",
-            text: generatedEmailBody,
+            text: finalEmailBody,
           });
 
           // 9. UPDATE: Mark as sent and record the AI's work

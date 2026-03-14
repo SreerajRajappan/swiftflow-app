@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import confetti from "canvas-confetti";
 import {
@@ -14,7 +14,6 @@ import { Page, Tabs, Box, BlockStack, Banner, Text } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-// import { fireTestEmail } from "~/agent.server";
 import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "app/constants";
 
 import { PersonalizerTab } from "../components/PersonalizerTab";
@@ -24,6 +23,7 @@ import { InsightsTab } from "../components/InsightsTab";
 import { RevenueLeaksTab } from "../components/RevenueLeaksTab";
 import { processAbandonedCarts } from "../services/email.server";
 import { runCartRecoveryAgent } from "../agent.server";
+import { geocodeAddress } from "~/services/geocoding.server";
 
 const LOCATION_QUERY = `#graphql
   query GetPrimaryLocation {
@@ -38,24 +38,23 @@ const LOCATION_QUERY = `#graphql
   }
 `;
 
-const METRIC_COUNTRIES = [
-  "CA",
-  "GB",
-  "AU",
-  "FR",
-  "DE",
-  "NL",
-  "SE",
-  "NO",
-  "DK",
-  "FI",
-  "JP",
-  "IN",
-  "BR",
-  "MX",
-];
+// const METRIC_COUNTRIES = [
+//   "CA",
+//   "GB",
+//   "AU",
+//   "FR",
+//   "DE",
+//   "NL",
+//   "SE",
+//   "NO",
+//   "DK",
+//   "FI",
+//   "JP",
+//   "IN",
+//   "BR",
+//   "MX",
+// ];
 
-// LOADER: Fetches all data for all tabs
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session, billing } = await authenticate.admin(request);
   const shop = session.shop;
@@ -90,7 +89,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 5,
   });
 
-  // --- NEW INSIGHTS MATH (From Claude) ---
   const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const allConversions = await prisma.conversionEvent.findMany({
     where: { shop, createdAt: { gte: last30Days } },
@@ -133,7 +131,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     status: "Test fired! Check your terminal and inbox.",
   };
 
-  // Fetch Active Revenue Leaks for the Dashboard
   const activeLeaks = await prisma.revenueLeak.findMany({
     where: { shop },
     orderBy: { createdAt: "desc" },
@@ -193,37 +190,49 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let unitSystem = settings?.unitSystem ?? "IMPERIAL";
   let locationWarning = false;
 
+  // Inside app/routes/app._index.tsx Loader
   try {
     const res = await admin.graphql(LOCATION_QUERY);
     const body = await res.json();
     const loc = body.data?.locations?.edges?.[0]?.node;
 
     if (loc) {
-      if (loc.address.latitude && loc.address.longitude) {
-        storeLat = loc.address.latitude;
-        storeLng = loc.address.longitude;
-      }
       storeAddress = [
         loc.address.address1,
         loc.address.city,
         loc.address.province,
+        loc.address.zip,
+        loc.address.countryCode,
       ]
         .filter(Boolean)
         .join(", ");
 
+      console.log("loc.address: ", loc.address);
+
+      if (!loc.address.latitude || !loc.address.longitude) {
+        console.log("📍 Lat/Lng missing from Shopify, geocoding address...");
+        console.log("storeAddress: ", storeAddress);
+        const coords = await geocodeAddress(storeAddress);
+        if (coords) {
+          storeLat = coords.lat;
+          storeLng = coords.lng;
+        }
+      } else {
+        storeLat = loc.address.latitude;
+        storeLng = loc.address.longitude;
+      }
+
+      // Default to Miles for US
       if (!settings?.hasCustomizedRadius) {
-        unitSystem = METRIC_COUNTRIES.includes(loc.address.countryCode)
-          ? "METRIC"
-          : "IMPERIAL";
+        unitSystem = loc.address.countryCode === "US" ? "IMPERIAL" : "METRIC";
       }
     }
   } catch (err) {
-    locationWarning = !storeLat;
+    console.error("Location Fetch Error:", err);
   }
 
-  // Safely ensure settings exist AND return the updated settings object
   if (!settings) {
-    const defaultRadius = unitSystem === "METRIC" ? 10.0 : 6.0;
+    const defaultRadius = unitSystem === "IMPERIAL" ? 6.0 : 10.0;
     settings = await prisma.appSettings.upsert({
       where: { shop },
       create: {
@@ -269,13 +278,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     storeAddress,
     unitSystem,
     locationWarning,
-    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
-    googleMapId: process.env.GOOGLE_MAP_ID ?? "",
+    googleMapsApiKey: process.env.SHOPIFY_GOOGLE_MAPS_KEY ?? "",
+    googleMapId: process.env.SHOPIFY_MAP_ID ?? "",
     advancedStats,
   });
 };
 
-// ACTION: Handles settings updates and data resets securely via Intents
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
@@ -341,7 +349,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "run-ai-agent") {
     try {
       console.log("⚡ Merchant manually triggered AI Agent");
-      await processAbandonedCarts();
+      await processAbandonedCarts(shop);
       await runCartRecoveryAgent();
 
       return json({
@@ -403,7 +411,6 @@ export default function Index() {
     [],
   );
 
-  // 👇 REORDERED TABS ARRAY
   const tabs = [
     { id: "revenue", content: "Revenue Suite" },
     { id: "delivery", content: "Delivery" },
@@ -452,12 +459,19 @@ export default function Index() {
     );
   };
 
+  const lastCelebratedRevenue = useRef(0);
+
   useEffect(() => {
-    // 👇 UPDATED TAB CHECK FOR CONFETTI (Now Index 0)
-    if (parseFloat(goalProgress) >= 100 && selectedTab === 0) {
+    // Only fire if goal is met, we are on the Home tab, AND the revenue has increased since the last celebration
+    if (
+      parseFloat(goalProgress) >= 100 &&
+      selectedTab === 0 &&
+      totalRevenue > lastCelebratedRevenue.current
+    ) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+      lastCelebratedRevenue.current = totalRevenue;
     }
-  }, [goalProgress, selectedTab]);
+  }, [goalProgress, selectedTab, totalRevenue]);
 
   useEffect(() => {
     if (actionData && "success" in actionData && actionData.success) {
@@ -504,6 +518,7 @@ export default function Index() {
       </TitleBar>
 
       <BlockStack gap="400">
+        {/* 👇 UPDATED GLOBAL SMART BANNER 👇 */}
         {isPro ? (
           trialDaysLeft > 0 ? (
             <Banner tone="success">
@@ -514,21 +529,24 @@ export default function Index() {
                 trial.
               </Text>
             </Banner>
-          ) : null /* Hides banner entirely once they are a paying customer */
+          ) : null
         ) : (
           <Banner
             tone="info"
             action={{ content: "Upgrade to Pro", url: "/app/billing" }}
           >
             <Text as="p">
-              You are on the Basic Plan. Upgrade to Pro to unlock Autonomous AI
-              Emails and unlimited recovered revenue.
+              <strong>Basic Plan Active:</strong>{" "}
+              {trialDaysLeft > 0 &&
+                `You have ${trialDaysLeft} days remaining in your free trial. `}
+              Upgrade to Pro to unlock Autonomous AI Emails and unlimited
+              recovered revenue.
             </Text>
           </Banner>
         )}
+
         <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
           <Box paddingBlockStart="400">
-            {/* 👇 REORDERED COMPONENT RENDERING TO MATCH NEW TABS ARRAY 👇 */}
             {selectedTab === 0 && (
               <RevenueSuiteTab
                 data={settings}
@@ -545,6 +563,8 @@ export default function Index() {
                 recentConversions={recentConversions}
                 shop={shop}
                 onResetData={onResetData}
+                isPro={isPro}
+                navigate={navigate}
               />
             )}
             {selectedTab === 1 && (
@@ -578,6 +598,8 @@ export default function Index() {
                 leaks={activeLeaks}
                 onRunScan={handleRunScan}
                 isScanning={aiFetcher.state === "submitting"}
+                isPro={isPro}
+                navigate={navigate}
               />
             )}
             {selectedTab === 4 && (

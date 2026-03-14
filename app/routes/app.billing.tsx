@@ -114,9 +114,9 @@ export default function BillingPage() {
                       text="Up to $1,000 / mo in recovered revenue"
                       bold
                     />
-                    <FeatureItem text="Geofenced Delivery Radius Logic" />
+                    <FeatureItem text="Geofenced Delivery Checking" />
+                    <FeatureItem text="Standard Cart Recovery Emails" />
                     <FeatureItem text="Revenue Tracking Dashboard" />
-                    <FeatureItem text="Email Support" />
                   </BlockStack>
                 </BlockStack>
               </Box>
@@ -166,7 +166,7 @@ export default function BillingPage() {
                     <FeatureItem text="Unlimited recovered revenue" bold />
                     <FeatureItem text="Autonomous AI Email Generation" bold />
                     <FeatureItem
-                      text="A/B Offer Testing (e.g. 10% vs Free Delivery)"
+                      text="A/B Offer Testing & Revenue Leaks"
                       bold
                     />
                     <FeatureItem text="Everything in Basic" />
@@ -192,11 +192,19 @@ export default function BillingPage() {
         </Layout>
 
         <Box paddingBlockEnd="800">
-          <InlineStack align="space-around" gap="200">
-            <Icon source={CashDollarIcon} tone="base" />
-            <Text as="span" tone="subdued" variant="bodySm">
-              Secure payments processed natively by Shopify. Cancel anytime.
-            </Text>
+          <InlineStack align="center" gap="200">
+            <Box>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <Icon source={CashDollarIcon} tone="base" />
+              </div>
+            </Box>
+            <div
+              style={{ display: "flex", alignItems: "center", height: "20px" }}
+            >
+              <Text as="span" tone="subdued" variant="bodySm">
+                Secure payments processed natively by Shopify. Cancel anytime.
+              </Text>
+            </div>
           </InlineStack>
         </Box>
         {/* FEATURE COMPARISON TABLE */}
@@ -209,7 +217,7 @@ export default function BillingPage() {
             </Box>
             <IndexTable
               resourceName={{ singular: "feature", plural: "features" }}
-              itemCount={5}
+              itemCount={8}
               headings={[
                 { title: "Features" },
                 { title: "Basic ($29)", alignment: "center" },
@@ -226,18 +234,41 @@ export default function BillingPage() {
                 },
                 {
                   id: "2",
-                  name: "Geofenced Delivery Checking",
+                  name: "Geofenced Delivery Radius",
+                  basic: "Fixed (6 miles)",
+                  pro: "Custom (Unlimited)",
+                },
+                {
+                  id: "3",
+                  name: "Delivery Availability Badge",
                   basic: true,
                   pro: true,
                 },
                 {
-                  id: "3",
-                  name: "Autonomous AI Email Generation",
+                  id: "4",
+                  name: "Cart Recovery Emails",
+                  basic: "Standard Template",
+                  pro: "Autonomous AI Agent",
+                },
+                {
+                  id: "5",
+                  name: "A/B Offer Testing",
                   basic: false,
                   pro: true,
                 },
-                { id: "4", name: "A/B Offer Testing", basic: false, pro: true },
-                { id: "5", name: "Support", basic: "Email", pro: "Priority" },
+                {
+                  id: "6",
+                  name: "Revenue Leaks Detection",
+                  basic: false,
+                  pro: true,
+                },
+                {
+                  id: "7",
+                  name: "Deep Revenue Insights",
+                  basic: false,
+                  pro: true,
+                },
+                { id: "8", name: "Support", basic: "Email", pro: "Priority" },
               ].map((row, index) => (
                 <IndexTable.Row id={row.id} key={row.id} position={index}>
                   <IndexTable.Cell>

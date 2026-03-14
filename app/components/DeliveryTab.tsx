@@ -12,7 +12,7 @@ import {
   Badge,
   Box,
   Spinner,
-  Checkbox, // <-- Added back for Cart Recovery
+  Checkbox,
 } from "@shopify/polaris";
 
 export default function DeliveryTab({
@@ -28,8 +28,8 @@ export default function DeliveryTab({
   recoveryEmailEnabled: boolean;
   setrecoveryEmailEnabled: (val: boolean) => void;
 }) {
-  const [radius, setRadius] = useState(data.deliveryRadius || 6);
-  const [unitSystem, setUnitSystem] = useState(data.unitSystem || "IMPERIAL");
+  const [radius, setRadius] = useState(data?.deliveryRadius || 6);
+  const [unitSystem, setUnitSystem] = useState(data?.unitSystem || "IMPERIAL");
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
 
@@ -37,47 +37,72 @@ export default function DeliveryTab({
   const mapInstanceRef = useRef<any>(null);
   const circleRef = useRef<any>(null);
 
+  useEffect(() => {
+    if (data?.deliveryRadius) setRadius(data.deliveryRadius);
+    if (data?.unitSystem) setUnitSystem(data.unitSystem);
+  }, [data?.deliveryRadius, data?.unitSystem]);
+
   const radiusInMeters =
     unitSystem === "IMPERIAL" ? radius * 1609.34 : radius * 1000;
 
   useEffect(() => {
-    if (!data.googleMapsApiKey || !data.storeLat || !data.storeLng) return;
+    if (!data?.googleMapsApiKey) {
+      setMapError(true);
+      return;
+    }
+    if (!data?.googleMapsApiKey || !data?.storeLat || !data?.storeLng) {
+      setMapError(true);
+      return;
+    }
+
+    let isMounted = true;
 
     async function initMap() {
       try {
-        if (!(window as any).google?.maps?.importLibrary) {
+        // 👇 FIX 2: Bulletproof Google Maps Script Loader
+        if (!(window as any).google?.maps?.Map) {
           await new Promise<void>((resolve, reject) => {
             const existing = document.querySelector("script[data-gmaps]");
             if (existing) {
-              resolve();
+              if ((window as any).google?.maps?.Map) {
+                resolve(); // Script is loaded and ready
+              } else {
+                existing.addEventListener("load", () => resolve()); // Wait for it
+                existing.addEventListener("error", () =>
+                  reject(new Error("Maps load failed")),
+                );
+              }
               return;
             }
+
             const script = document.createElement("script");
             script.setAttribute("data-gmaps", "true");
-            script.src = `https://maps.googleapis.com/maps/api/js?key=${data.googleMapsApiKey}&loading=async`;
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${data.googleMapsApiKey}&libraries=geometry`;
             script.async = true;
+            script.defer = true;
             script.onload = () => resolve();
             script.onerror = () => reject(new Error("Maps load failed"));
             document.head.appendChild(script);
           });
         }
 
-        const { Map, Circle } = await (window as any).google.maps.importLibrary(
-          "maps",
-        );
-
-        if (!mapRef.current) return;
+        if (!isMounted || !mapRef.current) return;
 
         const center = { lat: data.storeLat, lng: data.storeLng };
 
-        mapInstanceRef.current = new Map(mapRef.current, {
-          center,
-          zoom: 11,
-          mapId: data.googleMapId || undefined,
-          disableDefaultUI: false,
-        });
+        // Initialize Map
+        mapInstanceRef.current = new (window as any).google.maps.Map(
+          mapRef.current,
+          {
+            center,
+            zoom: 11,
+            mapId: data.googleMapId || undefined,
+            disableDefaultUI: false,
+          },
+        );
 
-        circleRef.current = new Circle({
+        // Initialize Circle
+        circleRef.current = new (window as any).google.maps.Circle({
           map: mapInstanceRef.current,
           center,
           radius: radiusInMeters,
@@ -91,14 +116,24 @@ export default function DeliveryTab({
         setMapReady(true);
       } catch (err) {
         console.error("[Map] Init error:", err);
-        setMapError(true);
+        if (isMounted) setMapError(true);
       }
     }
 
     initMap();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.storeLat, data.storeLng, data.googleMapsApiKey, data.googleMapId]);
 
+    return () => {
+      isMounted = false; // Prevent memory leaks if component unmounts
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    data?.storeLat,
+    data?.storeLng,
+    data?.googleMapsApiKey,
+    data?.googleMapId,
+  ]);
+
+  // Update Circle when radius or unit changes
   useEffect(() => {
     if (!circleRef.current) return;
     const meters = unitSystem === "IMPERIAL" ? radius * 1609.34 : radius * 1000;
@@ -110,7 +145,7 @@ export default function DeliveryTab({
     form.append("intent", "save-delivery");
     form.append("deliveryRadius", String(radius));
     form.append("unitSystem", unitSystem);
-    form.append("recoveryEmailEnabled", String(recoveryEmailEnabled)); // <-- Ensure it saves here
+    form.append("recoveryEmailEnabled", String(recoveryEmailEnabled));
     fetcher.submit(form, { method: "post" });
   }, [radius, unitSystem, recoveryEmailEnabled, fetcher]);
 
@@ -126,152 +161,155 @@ export default function DeliveryTab({
     fetcher.data?.intent === "save-delivery" && fetcher.data?.error;
 
   return (
-    <Layout>
-      {data.locationWarning && (
-        <Layout.Section>
-          <Banner title="Store location not found" tone="warning">
-            <p>
-              We couldn't geocode your store address. Please verify it in{" "}
-              <strong>Shopify Settings → Locations</strong> and re-save. The map
-              will use a default location until coordinates are confirmed.
-            </p>
-          </Banner>
-        </Layout.Section>
-      )}
+    <Box paddingBlockEnd="800">
+      <Layout>
+        {data?.locationWarning && (
+          <Layout.Section>
+            <Banner title="Store location not found" tone="warning">
+              <p>
+                We couldn't geocode your store address. Please verify it in{" "}
+                <strong>Shopify Settings → Locations</strong> and re-save. The
+                map will use a default location until coordinates are confirmed.
+              </p>
+            </Banner>
+          </Layout.Section>
+        )}
 
-      {saved && (
-        <Layout.Section>
-          <Banner title="Delivery zone saved successfully!" tone="success" />
-        </Layout.Section>
-      )}
+        {saved && (
+          <Layout.Section>
+            <Banner title="Delivery zone saved successfully!" tone="success" />
+          </Layout.Section>
+        )}
 
-      {hasError && (
-        <Layout.Section>
-          <Banner title={String(fetcher.data.error)} tone="critical" />
-        </Layout.Section>
-      )}
+        {hasError && (
+          <Layout.Section>
+            <Banner title={String(fetcher.data.error)} tone="critical" />
+          </Layout.Section>
+        )}
 
-      {!isPro && (
-        <Layout.Section>
-          <Banner title="Upgrade to Pro for Custom Zones" tone="info">
-            <p>
-              Free accounts are locked to an automatic 6-mile radius. Upgrade to
-              Pro to unlock unlimited custom distances, metric unit toggling,
-              and Smart Radius Optimization.
-            </p>
-          </Banner>
-        </Layout.Section>
-      )}
+        {!isPro && (
+          <Layout.Section>
+            <Banner title="Upgrade to Pro for Custom Zones" tone="info">
+              <p>
+                Free accounts are locked to an automatic 6-mile radius. Upgrade
+                to Pro to unlock unlimited custom distances, metric unit
+                toggling, and Smart Radius Optimization.
+              </p>
+            </Banner>
+          </Layout.Section>
+        )}
 
-      <Layout.Section variant="oneThird">
-        <Card>
-          <BlockStack gap="500">
-            <BlockStack gap="200">
+        <Layout.Section variant="oneThird">
+          <Card>
+            <Box minHeight="455px">
+              <BlockStack gap="500">
+                <BlockStack gap="200">
+                  <Text as="h2" variant="headingMd">
+                    Delivery Radius
+                  </Text>
+                  {data?.storeAddress && (
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      📍 {data.storeAddress}
+                    </Text>
+                  )}
+                </BlockStack>
+
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="p" variant="bodyMd">
+                    Current radius
+                  </Text>
+                  <Badge tone={isPro ? "success" : "info"} />
+                  {radius} {unit} {!isPro ? "(Free Limit)" : ""}
+                </InlineStack>
+
+                <Box>
+                  <RangeSlider
+                    label={`Radius (${unit})`}
+                    value={radius}
+                    min={1}
+                    max={maxRadius}
+                    step={unitSystem === "IMPERIAL" ? 0.5 : 1}
+                    onChange={(value) => setRadius(value as number)}
+                    output
+                    disabled={!isPro}
+                  />
+                </Box>
+
+                <Box>
+                  <Select
+                    label="Unit System"
+                    options={[
+                      { label: "Miles (US / Imperial)", value: "IMPERIAL" },
+                      { label: "Kilometers (Metric)", value: "METRIC" },
+                    ]}
+                    value={unitSystem}
+                    onChange={setUnitSystem}
+                    disabled={!isPro}
+                  />
+                </Box>
+
+                <Box paddingBlockStart="200">
+                  <Checkbox
+                    label="Enable Cart Recovery Emails"
+                    helpText="Automatically email customers who abandon their cart in your delivery zone."
+                    checked={recoveryEmailEnabled}
+                    onChange={setrecoveryEmailEnabled}
+                  />
+                </Box>
+
+                <Button
+                  variant="primary"
+                  onClick={handleSave}
+                  loading={isSaving}
+                  fullWidth
+                  disabled={!isPro}
+                >
+                  Save Custom Zone
+                </Button>
+              </BlockStack>
+            </Box>
+          </Card>
+        </Layout.Section>
+
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="400">
               <Text as="h2" variant="headingMd">
-                Delivery Radius
+                Coverage Map
               </Text>
-              {data.storeAddress && (
-                <Text as="p" tone="subdued" variant="bodySm">
-                  📍 {data.storeAddress}
-                </Text>
+
+              {mapError && (
+                <Banner title="Map unavailable" tone="critical">
+                  Google Maps failed to load. Please check your API key
+                  configuration in your environment variables.
+                </Banner>
               )}
+
+              {!mapError && !mapReady && data?.storeLat && (
+                <InlineStack align="center" gap="200">
+                  <Spinner size="small" />
+                  <Text as="p" tone="subdued">
+                    Loading map…
+                  </Text>
+                </InlineStack>
+              )}
+
+              <Box minHeight={mapError || !data?.storeLat ? "0px" : "420px"}>
+                <div
+                  ref={mapRef}
+                  style={{
+                    height: data?.storeLat && !mapError ? "420px" : "0px",
+                    width: "100%",
+                    borderRadius: "8px",
+                    overflow: "hidden",
+                    opacity: !isPro ? 0.8 : 1,
+                  }}
+                />
+              </Box>
             </BlockStack>
-
-            <InlineStack align="space-between" blockAlign="center">
-              <Text as="p" variant="bodyMd">
-                Current radius
-              </Text>
-              <Badge tone={isPro ? "success" : "info"} />
-              {radius} {unit} {!isPro && "(Free Limit)"}
-            </InlineStack>
-
-            <Box>
-              <RangeSlider
-                label={`Radius (${unit})`}
-                value={radius}
-                min={1}
-                max={maxRadius}
-                step={unitSystem === "IMPERIAL" ? 0.5 : 1}
-                onChange={(value) => setRadius(value as number)}
-                output
-                disabled={!isPro}
-              />
-            </Box>
-
-            <Box>
-              <Select
-                label="Unit System"
-                options={[
-                  { label: "Miles (US / Imperial)", value: "IMPERIAL" },
-                  { label: "Kilometers (Metric)", value: "METRIC" },
-                ]}
-                value={unitSystem}
-                onChange={setUnitSystem}
-                disabled={!isPro}
-              />
-            </Box>
-
-            {/* RESTORED CART RECOVERY CHECKBOX */}
-            <Box paddingBlockStart="200">
-              <Checkbox
-                label="Enable Cart Recovery Emails"
-                helpText="Automatically email customers who abandon their cart in your delivery zone."
-                checked={recoveryEmailEnabled}
-                onChange={setrecoveryEmailEnabled}
-              />
-            </Box>
-
-            <Button
-              variant="primary"
-              onClick={handleSave}
-              loading={isSaving}
-              fullWidth
-              disabled={!isPro}
-            >
-              Save Custom Zone
-            </Button>
-          </BlockStack>
-        </Card>
-      </Layout.Section>
-
-      <Layout.Section>
-        <Card>
-          <BlockStack gap="400">
-            <Text as="h2" variant="headingMd">
-              Coverage Map
-            </Text>
-
-            {mapError && (
-              <Banner title="Map unavailable" tone="critical">
-                Google Maps failed to load. Please check your API key
-                configuration in your environment variables.
-              </Banner>
-            )}
-
-            {!mapError && !mapReady && data.storeLat && (
-              <InlineStack align="center">
-                <Spinner size="small" />
-                <Text as="p" tone="subdued">
-                  Loading map…
-                </Text>
-              </InlineStack>
-            )}
-
-            <Box minHeight={mapError || !data.storeLat ? "0px" : "420px"}>
-              <div
-                ref={mapRef}
-                style={{
-                  height: data.storeLat && !mapError ? "420px" : "0px",
-                  width: "100%",
-                  borderRadius: "8px",
-                  overflow: "hidden",
-                  opacity: !isPro ? 0.8 : 1,
-                }}
-              />
-            </Box>
-          </BlockStack>
-        </Card>
-      </Layout.Section>
-    </Layout>
+          </Card>
+        </Layout.Section>
+      </Layout>
+    </Box>
   );
 }

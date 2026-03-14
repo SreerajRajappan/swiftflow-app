@@ -12,22 +12,42 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const orderPayload = payload as any;
   const totalAmount = parseFloat(orderPayload.total_price || "0");
-  const cartToken = orderPayload.checkout_token || orderPayload.cart_token;
   const orderId = String(orderPayload.id);
+
+  // Shopify checkout tokens can be volatile. Capture all possible identifiers!
+  const checkoutToken = orderPayload.checkout_token;
+  const cartToken = orderPayload.cart_token;
+  const customerEmail =
+    orderPayload.email ||
+    orderPayload.contact_email ||
+    orderPayload.customer?.email;
 
   // We will track if this sale came from our AI Agent
   let isAiRecovery = false;
 
   try {
     // --- PHASE 3: AI RECOVERY CLOSURE ---
-    if (cartToken) {
+    // Search by Token OR Email to catch cross-device or new-checkout recoveries
+    const searchConditions: any[] = [];
+    if (checkoutToken) searchConditions.push({ cartToken: checkoutToken });
+    if (cartToken) searchConditions.push({ cartToken: cartToken });
+    if (customerEmail) searchConditions.push({ customerEmail: customerEmail });
+
+    if (searchConditions.length > 0) {
       const recovery = await prisma.cartRecovery.findFirst({
-        where: { cartToken: cartToken, shop: shop },
+        where: {
+          shop: shop,
+          emailSent: true,
+          recovered: false,
+          OR: searchConditions,
+        },
+        orderBy: { updatedAt: "desc" },
       });
 
-      if (recovery && recovery.emailSent && !recovery.recovered) {
+      if (recovery) {
         isAiRecovery = true; // Flag this order as an AI win!
 
+        // 1. Mark the recovery as successful
         await prisma.cartRecovery.update({
           where: { id: recovery.id },
           data: {
@@ -37,12 +57,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           },
         });
 
+        // 2. Update the Revenue Leak UI to show the green "Recovered" badge
         const leaks = await prisma.revenueLeak.findMany({
           where: { shop: shop },
         });
+
+        // Find the leak matching the original cart token
         const currentLeak = leaks
           .reverse()
-          .find((l: any) => l.metadata?.cartToken === cartToken);
+          .find((l: any) => l.metadata?.cartToken === recovery.cartToken);
 
         if (currentLeak) {
           await prisma.revenueLeak.update({
@@ -57,17 +80,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
     }
 
-    // --- FIXED CONVERSION EVENT LOGIC ---
-    // Uses ConversionEvent instead of Conversion, and maps to your exact schema fields
+    // --- RECORD THE CONVERSION EVENT ---
     await prisma.conversionEvent.upsert({
       where: { orderId: orderId },
-      update: {}, // If Shopify sends duplicate webhooks, don't double-count the revenue
+      update: {}, // Prevent double-counting on duplicate webhooks
       create: {
         shop: shop,
         orderId: orderId,
         orderValue: totalAmount,
         source: isAiRecovery ? "cart_recovery" : "organic",
-        cartToken: cartToken,
+        cartToken: checkoutToken || cartToken || null,
       },
     });
 

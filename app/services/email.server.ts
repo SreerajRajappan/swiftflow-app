@@ -1,22 +1,28 @@
 import db from "../db.server";
 
-export async function processAbandonedCarts() {
-  console.log("CRON EXECUTING: Scanning for new Revenue Leaks...");
+export async function processAbandonedCarts(shop: string) {
+  console.log(
+    `🤖 [AI Agent] Waking up to check for abandoned carts for ${shop}...`,
+  );
 
   // 1. Define what "Abandoned" means (e.g., no updates in the last 60 minutes)
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const oneHourAgo = new Date(Date.now() - 1 * 60 * 1000); // 1 min for testing
 
   // 2. Query the database for carts that have gone cold
   const abandonedCarts = await db.cartRecovery.findMany({
     where: {
-      updatedAt: { lte: oneHourAgo }, // Hasn't been touched in over an hour
+      shop,
+      updatedAt: { lte: oneHourAgo }, // Hasn't been touched in over a minute
       recovered: false,
-      agentStatus: "IDLE", // Ensures we don't process the same cart twice
+      // 👇 FIX: Allow the scanner to pick up carts that the webhook flagged as IN_ZONE
+      agentStatus: { in: ["IDLE", "IN_ZONE"] },
     },
   });
 
   if (abandonedCarts.length === 0) {
-    console.log("No new abandoned carts detected.");
+    console.log(
+      "🤖 [AI Agent] No new abandoned carts detected. Going back to sleep.",
+    );
     return;
   }
 
@@ -24,8 +30,19 @@ export async function processAbandonedCarts() {
   for (const cart of abandonedCarts) {
     const value = cart.cartValue || 0;
 
+    // 👇 RICH LOGS: See exactly who the agent is analyzing
+    console.log(`\n🔎 [AI Agent] Analyzing cart for: ${cart.customerEmail}`);
+    console.log(
+      `📍 [AI Agent] Geofence Status: ${cart.agentStatus} | Value: $${value}`,
+    );
+
     // Ignore carts with practically nothing in them to keep the dashboard high-signal
-    if (value < 10) continue;
+    if (value < 10) {
+      console.log(
+        `⏭️ [AI Agent] Skipping ${cart.customerEmail} - Cart value too low (<$10).`,
+      );
+      continue;
+    }
 
     // Dynamically assign severity based on lost revenue
     const severity = value > 150 ? "CRITICAL" : value > 50 ? "WARNING" : "INFO";
@@ -54,7 +71,13 @@ export async function processAbandonedCarts() {
     });
 
     console.log(
-      `[LEAK DETECTED] ${severity} - $${value} for shop ${cart.shop}`,
+      `🚨 [LEAK DETECTED] ${severity} - $${value} for shop ${cart.shop}`,
     );
+
+    if (cart.agentStatus === "IN_ZONE") {
+      console.log(
+        `🎯 [AI Agent] Target is IN ZONE! Queued for Local Delivery Email flow.`,
+      );
+    }
   }
 }

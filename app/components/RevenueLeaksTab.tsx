@@ -8,6 +8,7 @@ import {
   InlineStack,
   Icon,
   Button,
+  Box,
 } from "@shopify/polaris";
 import {
   AlertDiamondIcon,
@@ -20,11 +21,38 @@ export function RevenueLeaksTab({
   leaks,
   onRunScan,
   isScanning,
+  isPro,
+  navigate,
 }: {
   leaks: any[];
   onRunScan: () => void;
   isScanning: boolean;
+  isPro: boolean;
+  navigate: (path: string) => void;
 }) {
+  if (!isPro) {
+    return (
+      <Card>
+        <Box padding="1000">
+          <EmptyState
+            heading="Unlock AI Revenue Leaks Detection"
+            action={{
+              content: "Upgrade to Pro",
+              onAction: () => navigate("/app/billing"),
+            }}
+            image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+          >
+            <p>
+              Revenue Leaks monitoring is a Pro feature. Upgrade to unlock our
+              AI Agent that detects high-value abandoned carts and dispatches
+              targeted recovery emails in real-time.
+            </p>
+          </EmptyState>
+        </Box>
+      </Card>
+    );
+  }
+
   if (!leaks || leaks.length === 0) {
     return (
       <Card>

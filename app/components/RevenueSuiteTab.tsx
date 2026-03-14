@@ -19,7 +19,7 @@ import {
   ChartVerticalIcon,
   MoneyIcon,
   ViewIcon,
-  MagicIcon, // <--- ADDED MAGIC ICON
+  MagicIcon,
 } from "@shopify/polaris-icons";
 
 interface RevenueSuiteProps {
@@ -37,6 +37,8 @@ interface RevenueSuiteProps {
   recentConversions: any[];
   shop: string;
   onResetData: () => void;
+  isPro: boolean;
+  navigate: (path: string) => void;
 }
 
 export function RevenueSuiteTab({
@@ -53,8 +55,9 @@ export function RevenueSuiteTab({
   recentConversions,
   shop,
   onResetData,
+  isPro,
+  navigate,
 }: RevenueSuiteProps) {
-  // Claude's Local State for Email & A/B Testing
   const [subject, setSubject] = useState(
     data?.recoveryEmailSubject || "Good news! We deliver to you!",
   );
@@ -90,58 +93,87 @@ export function RevenueSuiteTab({
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
-            {/* 👇 NEW AI AGENT STATUS CARD 👇 */}
-            <Card>
-              <BlockStack gap="400">
-                <InlineStack align="space-between" blockAlign="center">
-                  <InlineStack gap="200" blockAlign="center">
-                    <Icon source={MagicIcon} tone="magic" />
-                    <Text as="h2" variant="headingMd">
-                      SwiftFlow AI Agent
+            {/* AI AGENT STATUS CARD */}
+            {isPro ? (
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <InlineStack gap="200" blockAlign="center">
+                      <Icon source={MagicIcon} tone="magic" />
+                      <Text as="h2" variant="headingMd">
+                        SwiftFlow AI Agent
+                      </Text>
+                    </InlineStack>
+                    <Badge tone={isEnabled ? "success" : "critical"}>
+                      {isEnabled ? "Active & Monitoring" : "Paused"}
+                    </Badge>
+                  </InlineStack>
+
+                  <Divider />
+
+                  <Box>
+                    <InlineStack gap="400" wrap={false}>
+                      <BlockStack gap="100">
+                        <Text as="span" variant="bodySm" tone="subdued">
+                          Current Mission
+                        </Text>
+                        <Text as="p" variant="bodyMd" fontWeight="medium">
+                          Scanning for abandoned carts within{" "}
+                          {data?.deliveryRadius || 10}{" "}
+                          {data?.unitSystem === "METRIC" ? "km" : "miles"}.
+                        </Text>
+                      </BlockStack>
+
+                      <BlockStack gap="100">
+                        <Text as="span" variant="bodySm" tone="subdued">
+                          Drafting Style
+                        </Text>
+                        <Text as="p" variant="bodyMd" fontWeight="medium">
+                          Helpful & Hyper-Local
+                        </Text>
+                      </BlockStack>
+
+                      <BlockStack gap="100">
+                        <Text as="span" variant="bodySm" tone="subdued">
+                          Action Taken
+                        </Text>
+                        <Text as="p" variant="bodyMd" fontWeight="medium">
+                          Autonomous Email Dispatch
+                        </Text>
+                      </BlockStack>
+                    </InlineStack>
+                  </Box>
+                </BlockStack>
+              </Card>
+            ) : (
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <InlineStack gap="200" blockAlign="center">
+                      <Icon source={MagicIcon} tone="magic" />
+                      <Text as="h2" variant="headingMd">
+                        SwiftFlow AI Agent
+                      </Text>
+                    </InlineStack>
+                    <Badge tone="attention">Pro Feature</Badge>
+                  </InlineStack>
+                  <Divider />
+                  <Box>
+                    <Text as="p" variant="bodyMd" tone="subdued">
+                      Upgrade to Pro to unlock our autonomous AI agent that
+                      detects high-value abandoned carts and generates highly
+                      personalized, contextual recovery emails.
                     </Text>
-                  </InlineStack>
-                  <Badge tone={isEnabled ? "success" : "critical"}>
-                    {isEnabled ? "Active & Monitoring" : "Paused"}
-                  </Badge>
-                </InlineStack>
-
-                <Divider />
-
-                <Box>
-                  <InlineStack gap="400" wrap={false}>
-                    <BlockStack gap="100">
-                      <Text as="span" variant="bodySm" tone="subdued">
-                        Current Mission
-                      </Text>
-                      <Text as="p" variant="bodyMd" fontWeight="medium">
-                        Scanning for abandoned carts within{" "}
-                        {data?.deliveryRadius || 10}{" "}
-                        {data?.unitSystem === "METRIC" ? "km" : "miles"}.
-                      </Text>
-                    </BlockStack>
-
-                    <BlockStack gap="100">
-                      <Text as="span" variant="bodySm" tone="subdued">
-                        Drafting Style
-                      </Text>
-                      <Text as="p" variant="bodyMd" fontWeight="medium">
-                        Helpful & Hyper-Local
-                      </Text>
-                    </BlockStack>
-
-                    <BlockStack gap="100">
-                      <Text as="span" variant="bodySm" tone="subdued">
-                        Action Taken
-                      </Text>
-                      <Text as="p" variant="bodyMd" fontWeight="medium">
-                        Autonomous Email Dispatch
-                      </Text>
-                    </BlockStack>
-                  </InlineStack>
-                </Box>
-              </BlockStack>
-            </Card>
-            {/* 👆 END AI AGENT STATUS CARD 👆 */}
+                  </Box>
+                  <Button
+                    onClick={() => navigate("/app/billing")}
+                    variant="primary"
+                  >
+                    Upgrade to Pro
+                  </Button>
+                </BlockStack>
+              </Card>
+            )}
 
             {/* DAILY GOAL */}
             <Card>
@@ -247,7 +279,7 @@ export function RevenueSuiteTab({
               </BlockStack>
             </Card>
 
-            {/* YOUR RECENT CONVERSIONS (Fixed Schema Mapping) */}
+            {/* YOUR RECENT CONVERSIONS */}
             <Card padding="0">
               <Box padding="400">
                 <Text as="h2" variant="headingMd">
@@ -290,10 +322,10 @@ export function RevenueSuiteTab({
           </BlockStack>
         </Layout.Section>
 
-        {/* RIGHT COLUMN: Claude's Configuration Features */}
+        {/* RIGHT COLUMN */}
         <Layout.Section variant="oneThird">
           <BlockStack gap="400">
-            {/* CLAUDE'S EMAIL CONFIG */}
+            {/* EMAIL CONFIG */}
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">
@@ -312,7 +344,11 @@ export function RevenueSuiteTab({
                   onChange={setBody}
                   multiline={4}
                   autoComplete="off"
-                  helpText="Use plain text. The customer's exact cart will be appended by the AI automatically."
+                  helpText={
+                    isPro
+                      ? "The AI Agent will use this as a base and append the cart context."
+                      : "This text will be sent to the customer if cart recovery is enabled."
+                  }
                 />
                 <Button
                   variant="primary"
@@ -324,15 +360,27 @@ export function RevenueSuiteTab({
               </BlockStack>
             </Card>
 
-            {/* CLAUDE'S A/B TESTING */}
+            {/* A/B TESTING */}
             <Card>
               <BlockStack gap="400">
                 <InlineStack align="space-between" blockAlign="center">
                   <Text as="h2" variant="headingMd">
                     A/B Testing
                   </Text>
-                  <Badge tone={abEnabled ? "success" : "attention"}>
-                    {abEnabled ? "Active" : "Inactive"}
+                  <Badge
+                    tone={
+                      isPro
+                        ? abEnabled
+                          ? "success"
+                          : "attention"
+                        : "attention"
+                    }
+                  >
+                    {isPro
+                      ? abEnabled
+                        ? "Active"
+                        : "Inactive"
+                      : "Pro Feature"}
                   </Badge>
                 </InlineStack>
                 <Divider />
@@ -342,10 +390,18 @@ export function RevenueSuiteTab({
                 </Text>
 
                 <Button
-                  variant={abEnabled ? "primary" : "secondary"}
-                  onClick={() => setAbEnabled(!abEnabled)}
+                  variant={
+                    isPro ? (abEnabled ? "primary" : "secondary") : "secondary"
+                  }
+                  onClick={() =>
+                    isPro ? setAbEnabled(!abEnabled) : navigate("/app/billing")
+                  }
                 >
-                  {abEnabled ? "Disable A/B Testing" : "Enable A/B Testing"}
+                  {isPro
+                    ? abEnabled
+                      ? "Disable A/B Testing"
+                      : "Enable A/B Testing"
+                    : "Upgrade to Pro to Enable"}
                 </Button>
 
                 <InlineGrid columns={2} gap="400">
@@ -354,25 +410,27 @@ export function RevenueSuiteTab({
                     value={msgA}
                     onChange={setMsgA}
                     autoComplete="off"
-                    disabled={!abEnabled}
+                    disabled={!isPro || !abEnabled}
                   />
                   <TextField
                     label="Message B (50%)"
                     value={msgB}
                     onChange={setMsgB}
                     autoComplete="off"
-                    disabled={!abEnabled}
+                    disabled={!isPro || !abEnabled}
                   />
                 </InlineGrid>
 
-                <Button
-                  variant="primary"
-                  loading={isLocalSaving}
-                  onClick={handleSaveConfig}
-                  disabled={!abEnabled}
-                >
-                  Save A/B Test
-                </Button>
+                {isPro && (
+                  <Button
+                    variant="primary"
+                    loading={isLocalSaving}
+                    onClick={handleSaveConfig}
+                    disabled={!abEnabled}
+                  >
+                    Save A/B Test
+                  </Button>
+                )}
               </BlockStack>
             </Card>
           </BlockStack>
