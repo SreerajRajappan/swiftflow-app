@@ -2,21 +2,25 @@ import { OpenAI } from "openai";
 import { Resend } from "resend";
 import db from "./db.server";
 
-// Initialize OpenAI and Resend using production secrets
+// Initialize OpenAI and Resend
 const openai = new OpenAI();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export async function runCartRecoveryAgent() {
-  console.log("🤖 [AI Agent] Waking up to check for abandoned carts...");
+export async function runCartRecoveryAgent(shop?: string) {
+  console.log("🤖 [AI Agent] Waking up to write and dispatch emails...");
 
   try {
+    const whereClause: any = {
+      // 👇 Trust the state machine! If it's ANALYZING, it's ready for an email.
+      agentStatus: "ANALYZING",
+    };
+
+    // Only filter by shop if we are running a manual scan
+    if (shop) whereClause.shop = shop;
+
     // 1. Find all carts that are waiting for the Agent
     const pendingCarts = await db.cartRecovery.findMany({
-      where: {
-        agentStatus: "ANALYZING",
-        emailSent: false,
-        inDeliveryZone: true,
-      },
+      where: whereClause,
       take: 10,
     });
 
@@ -28,11 +32,10 @@ export async function runCartRecoveryAgent() {
     console.log(`🤖 [AI Agent] Found ${pendingCarts.length} carts to process.`);
 
     for (const cart of pendingCarts) {
-      // --- NEW: Find the associated Revenue Leak to keep the UI in sync ---
+      // --- Find the associated Revenue Leak to keep the UI in sync ---
       const leaks = await db.revenueLeak.findMany({
         where: { shop: cart.shop },
       });
-      // Find the most recent leak matching this cart token
       const currentLeak = leaks
         .reverse()
         .find((l) => (l.metadata as any)?.cartToken === cart.cartToken);
@@ -43,7 +46,6 @@ export async function runCartRecoveryAgent() {
         data: { agentStatus: "PROCESSING" },
       });
 
-      // Show "Agent Working" in the UI
       if (currentLeak) {
         await db.revenueLeak.update({
           where: { id: currentLeak.id },
@@ -109,6 +111,7 @@ export async function runCartRecoveryAgent() {
           .join(" ");
         const cartUrl = `https://${cart.shop}/cart`;
         const finalEmailBody = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
+
         // 8. DISPATCH: Send the actual email via Resend
         try {
           await resend.emails.send({
@@ -131,7 +134,7 @@ export async function runCartRecoveryAgent() {
             },
           });
 
-          // --- NEW: Sync the UI table to show the "Recovered" badge ---
+          // --- Sync the UI table to show the "Email Sent" badge ---
           if (currentLeak) {
             await db.revenueLeak.update({
               where: { id: currentLeak.id },

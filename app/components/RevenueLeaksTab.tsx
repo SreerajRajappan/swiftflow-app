@@ -147,15 +147,27 @@ export function RevenueLeaksTab({
     <BlockStack gap="400">
       {totalAtRisk > 0 && (
         <Card background="bg-surface-critical">
-          <BlockStack gap="200">
-            <Text as="h2" variant="headingMd" tone="critical">
-              Immediate Attention Required
-            </Text>
-            <Text as="p" variant="bodyMd">
-              There is currently <strong>${totalAtRisk.toFixed(2)}</strong> in
-              abandoned high-value carts. Your AI Agent is analyzing these to
-              dispatch targeted recovery emails.
-            </Text>
+          <BlockStack gap="400">
+            <BlockStack gap="200">
+              <Text as="h2" variant="headingMd" tone="critical">
+                Immediate Attention Required
+              </Text>
+              <Text as="p" variant="bodyMd">
+                There is currently <strong>${totalAtRisk.toFixed(2)}</strong> in
+                abandoned high-value carts. Your AI Agent is ready to analyze
+                these and dispatch targeted recovery emails.
+              </Text>
+            </BlockStack>
+            <InlineStack>
+              <Button
+                variant="primary"
+                icon={PlayIcon}
+                onClick={onRunScan}
+                loading={isScanning}
+              >
+                Dispatch AI Agent Now
+              </Button>
+            </InlineStack>
           </BlockStack>
         </Card>
       )}

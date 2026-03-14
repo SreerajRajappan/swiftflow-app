@@ -1,6 +1,7 @@
 import { type ActionFunctionArgs, json } from "@remix-run/node";
 import { processAbandonedCarts } from "../services/email.server";
 import { runCartRecoveryAgent } from "../agent.server";
+import db from "../db.server"; // 👈 Add your Prisma import
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   // 1. Security Check: Only allow authorized requests
@@ -20,16 +21,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // 3. Execute the service logic sequentially
   try {
-    console.log("⏱️ Starting Cart Recovery Cycle...");
+    console.log("⏱️ Starting App-Wide Cart Recovery Cycle...");
 
-    // Phase 1: Scan for cold carts and flag as ANALYZING
-    await processAbandonedCarts();
+    // 👇 3a. Fetch all active shops that have the Revenue Suite enabled
+    const activeShops = await db.appSettings.findMany({
+      where: { revenueSuiteEnabled: true },
+      select: { shop: true },
+    });
 
-    // Phase 2: AI Agent writes and sends the emails
-    await runCartRecoveryAgent();
+    if (activeShops.length === 0) {
+      console.log("No active shops found. Exiting cron.");
+      return json({ success: true, message: "No active shops." });
+    }
+
+    // 👇 3b. Loop through every shop and run the agent
+    for (const { shop } of activeShops) {
+      console.log(`\n🔄 Processing Shop: ${shop}`);
+
+      // Phase 1: Scan for cold carts and flag as ANALYZING
+      await processAbandonedCarts(shop);
+
+      // Phase 2: AI Agent writes and sends the emails
+      // (Assuming runCartRecoveryAgent also expects the shop string!)
+      await runCartRecoveryAgent(shop);
+    }
 
     return json(
-      { success: true, message: "Abandoned cart cycle completed." },
+      {
+        success: true,
+        message: "Abandoned cart cycle completed for all shops.",
+      },
       { status: 200 },
     );
   } catch (error) {

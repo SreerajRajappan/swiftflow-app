@@ -350,12 +350,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     try {
       console.log("⚡ Merchant manually triggered AI Agent");
       await processAbandonedCarts(shop);
-      await runCartRecoveryAgent();
+      await runCartRecoveryAgent(shop);
 
       return json({
         success: true,
         intent: "run-ai-agent",
-        message: "AI Scan Complete: Emails dispatched!",
+        message: "AI Scan Complete: Check Active Leaks table!",
       });
     } catch (error) {
       console.error("Manual AI Trigger Failed:", error);
