@@ -133,19 +133,19 @@ export default function BillingPage() {
             <Card>
               <Box minHeight="380px">
                 <BlockStack gap="400">
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      height: "32px",
-                    }}
-                  >
-                    <Icon source={LocationIcon} tone="base" />
+                  <InlineStack align="start" gap={"200"}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Icon source={LocationIcon} tone="base" />
+                    </div>
                     <Text as="h2" variant="headingMd">
                       Basic Recovery
                     </Text>
-                  </div>
+                  </InlineStack>
                   <BlockStack gap="100">
                     <Text as="h1" variant="headingLg">
                       $29.00{" "}

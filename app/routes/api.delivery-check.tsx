@@ -15,7 +15,6 @@ const CORS = {
 };
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  // --- REMIX CORS FIX ---
   // Handle the browser's preflight OPTIONS request correctly
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS });
@@ -33,7 +32,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   }
 
   try {
-    const settings = await db.appSettings.findFirst({ where: { shop } });
+    const settings = await db.appSettings.findUnique({ where: { shop } });
 
     if (!settings?.storeLat || !settings?.storeLng) {
       return json(
@@ -84,25 +83,30 @@ export async function loader({ request }: LoaderFunctionArgs) {
       settings.deliveryRadius,
       settings.unitSystem,
     );
+
     const inRadius = distance <= radiusInMiles;
 
-    // Determine message (A/B test or default)
     let message: string;
     let abVariant: string | null = null;
 
-    if (settings.abTestEnabled) {
-      abVariant = Math.random() < 0.5 ? "A" : "B";
-      message =
-        abVariant === "A" ? settings.abTestMessageA : settings.abTestMessageB;
+    if (inRadius) {
+      if (
+        settings.abTestEnabled &&
+        settings.abTestMessageA &&
+        settings.abTestMessageB
+      ) {
+        abVariant = Math.random() < 0.5 ? "A" : "B";
+        message =
+          abVariant === "A" ? settings.abTestMessageA : settings.abTestMessageB;
+      } else {
+        message = `Great news! We deliver to your area (${distance.toFixed(1)} ${settings.unitSystem === "METRIC" ? "km" : "mi"} away)`;
+      }
     } else {
-      message = inRadius
-        ? `Great news! We deliver to your area (${distance.toFixed(1)} mi away)`
-        : "Sorry, you're outside our current delivery zone";
+      message = "Sorry, you're outside our current delivery zone";
     }
 
     const estimatedTime = inRadius ? estimateDeliveryTime(distance) : null;
 
-    // Log the check
     await db.deliveryCheck.create({
       data: {
         shop,
