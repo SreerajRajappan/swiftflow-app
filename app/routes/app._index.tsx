@@ -8,7 +8,7 @@ import {
   useSubmit,
   useFetcher,
 } from "@remix-run/react";
-import { Page, Box, BlockStack } from "@shopify/polaris";
+import { Page, Box, BlockStack, Banner, Text } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -66,7 +66,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     0,
   );
 
-  // 3. Get the Daily Goal
+  // 3. Calculate Monthly Revenue (For Billing Enforcement)
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  const currentMonthData = await prisma.conversionEvent.aggregate({
+    where: { shop, createdAt: { gte: startOfMonth } },
+    _sum: { orderValue: true },
+  });
+  const currentMonthRevenue = currentMonthData._sum.orderValue || 0;
+  const hasReachedBasicLimit = !isPro && currentMonthRevenue >= 1000;
+
+  // 4. Get the Daily Goal
   const dailyGoal = settings?.dailyGoal || 500;
   const goalProgress = dailyGoal > 0 ? (todayRevenue / dailyGoal) * 100 : 0;
 
@@ -79,28 +91,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 5,
   });
 
-  let trialDaysLeft = 0;
-  if (subscription && subscription.trialDays) {
-    const createdAt = new Date(subscription.createdAt);
-    const trialLength = subscription.trialDays;
-    const now = new Date();
-    const diffInMs = now.getTime() - createdAt.getTime();
-    const daysPassed = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-    trialDaysLeft = Math.max(0, trialLength - daysPassed);
-  }
-
   return json({
     settings,
     shop,
     totalViews,
     totalRevenue,
     todayRevenue,
+    currentMonthRevenue,
+    hasReachedBasicLimit,
     conversionRate,
     recentConversions,
     dailyGoal,
     goalProgress: Math.min(goalProgress, 100).toFixed(0),
     isPro,
-    trialDaysLeft,
     isDev: process.env.NODE_ENV === "development",
   });
 };
@@ -264,34 +267,38 @@ export default function Index() {
       <TitleBar title="SwiftFlow: Revenue Suite" />
 
       <BlockStack gap="400">
-        {/* GLOBAL SMART BANNER */}
-        {/* {data.isPro ? (
-          data.trialDaysLeft > 0 ? (
-            <Banner tone="success">
-              <Text as="p">
-                <strong>Pro Suite Active:</strong> Your AI Cart Recovery Agent
-                is monitoring local drop-offs. You have{" "}
-                <strong>{data.trialDaysLeft} days</strong> remaining in your
-                free trial.
-              </Text>
-            </Banner>
-          ) : null
-        ) : (
+        {/* 🚨 DYNAMIC BILLING & STATUS BANNERS 🚨 */}
+        {data.hasReachedBasicLimit ? (
+          <Banner
+            title="Revenue Limit Reached: AI Agent Paused"
+            tone="critical"
+            action={{ content: "Upgrade to Pro", url: "/app/billing" }}
+          >
+            <Text as="p">
+              Congratulations! You have successfully recovered{" "}
+              <strong>${data.currentMonthRevenue.toFixed(2)}</strong> this
+              month, hitting your Basic plan limit. Upgrade to the Pro Suite for
+              just an additional <strong>$20/month</strong> to unlock unlimited
+              revenue recovery and get your AI Agent back to work instantly.
+            </Text>
+          </Banner>
+        ) : !data.isPro ? (
           <Banner
             tone="info"
             action={{ content: "Upgrade to Pro", url: "/app/billing" }}
           >
             <Text as="p">
-              <strong>Basic Plan Active:</strong>{" "}
-              {data.trialDaysLeft > 0 &&
-                `You have ${data.trialDaysLeft} days remaining in your free trial. `}
-              Upgrade to Pro to unlock Autonomous AI Emails and unlimited
-              recovered revenue.
+              <strong>Basic Plan Active:</strong> Upgrade to Pro to unlock
+              Autonomous AI Emails and unlimited recovered revenue.
             </Text>
           </Banner>
-        )} */}
+        ) : null}
 
-        <Box paddingBlockStart="200">
+        <Box
+          paddingBlockStart={
+            data.hasReachedBasicLimit || !data.isPro ? "200" : "0"
+          }
+        >
           <RevenueSuiteTab
             data={data.settings}
             fetcher={fetcher}
