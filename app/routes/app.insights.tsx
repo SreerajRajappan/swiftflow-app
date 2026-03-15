@@ -1,171 +1,135 @@
-import { useLoaderData } from "@remix-run/react";
-import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
-import {
-  Page,
-  Layout,
-  Card,
-  BlockStack,
-  Text,
-  InlineGrid,
-  DataTable,
-  Badge,
-  EmptyState,
-} from "@shopify/polaris";
+import { json } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
+import { Page, BlockStack } from "@shopify/polaris";
+import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import db from "../db.server";
+import prisma from "../db.server";
+import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "../constants";
+import { InsightsTab } from "../components/InsightsTab";
 
-export async function loader({ request }: LoaderFunctionArgs) {
-  const { session } = await authenticate.admin(request);
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { admin, session, billing } = await authenticate.admin(request);
   const shop = session.shop;
 
-  const now = new Date();
-  const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-  // Get conversion events
-  const conversions = await db.conversionEvent.findMany({
-    where: {
-      shop,
-      createdAt: { gte: last30Days },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 10,
+  const billingCheck = await billing.check({
+    plans: [MONTHLY_PLAN_PRO, MONTHLY_PLAN_BASIC],
+    isTest: true,
   });
 
-  const totalRevenue = conversions.reduce(
-    (sum: number, conv: any) => sum + conv.orderValue,
-    0,
+  const subscription = billingCheck.appSubscriptions.find(
+    (sub) => sub.status === "ACTIVE",
   );
-  const totalOrders = conversions.length;
+  const isPro = subscription?.name === MONTHLY_PLAN_PRO;
 
-  // Get delivery checks
-  const deliveryChecks = await db.deliveryCheck.findMany({
-    where: {
-      shop,
-      timestamp: { gte: last30Days },
-    },
+  // 1. Recent Conversions
+  const recentConversions = await prisma.conversionEvent.findMany({
+    where: { shop },
+    orderBy: { createdAt: "desc" },
+    take: 5,
   });
 
-  const inRadiusCount = deliveryChecks.filter((c: any) => c.inRadius).length;
-  const totalChecks = deliveryChecks.length;
+  // 2. Advanced Stats Aggregation (Last 30 Days)
+  const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const allConversions = await prisma.conversionEvent.findMany({
+    where: { shop, createdAt: { gte: last30Days } },
+  });
+  const badgeConversions = allConversions.filter(
+    (c) => c.source === "delivery_badge",
+  );
+  const recoveryConversions = allConversions.filter(
+    (c) => c.source === "cart_recovery",
+  );
 
-  // Get cart recovery stats
-  const recoveredCarts = await db.cartRecovery.findMany({
-    where: {
-      shop,
-      recovered: true,
-      recoveredAt: { gte: last30Days },
-    },
+  const allChecks = await prisma.deliveryCheck.findMany({
+    where: { shop, timestamp: { gte: last30Days } },
+  });
+  const inRadiusCount = allChecks.filter((c) => c.inRadius).length;
+
+  const cartRecoveries = await prisma.cartRecovery.findMany({
+    where: { shop },
+  });
+  const emailsSent = cartRecoveries.filter((c) => c.emailSent).length;
+  const recovered = cartRecoveries.filter(
+    (c) => c.recovered && c.recoveredAt && c.recoveredAt >= last30Days,
+  );
+
+  const advancedStats = {
+    totalRevenue: allConversions.reduce((s, c) => s + c.orderValue, 0),
+    totalOrders: allConversions.length,
+    badgeRevenue: badgeConversions.reduce((s, c) => s + c.orderValue, 0),
+    badgeOrders: badgeConversions.length,
+    recoveryRevenue: recoveryConversions.reduce((s, c) => s + c.orderValue, 0),
+    recoveryOrders: recoveryConversions.length,
+    totalChecks: allChecks.length,
+    inRadiusCount,
+    conversionRate:
+      allChecks.length > 0 ? (inRadiusCount / allChecks.length) * 100 : 0,
+    emailsSent,
+    recoveredCount: recovered.length,
+    recoveredRevenue: recovered.reduce((s, c) => s + (c.recoveryValue ?? 0), 0),
+    recoveryRate: emailsSent > 0 ? (recovered.length / emailsSent) * 100 : 0,
+  };
+
+  // 3. Trending Products via GraphQL
+  const trendingData = await prisma.productView.groupBy({
+    by: ["productId"],
+    where: { shop },
+    _count: { productId: true },
+    orderBy: { _count: { productId: "desc" } },
+    take: 5,
   });
 
-  const recoveredRevenue = recoveredCarts.reduce(
-    (sum: number, cart: any) => sum + (cart.recoveryValue || 0),
-    0,
+  const enrichedProducts = await Promise.all(
+    trendingData.map(async (item: any) => {
+      try {
+        const response = await admin.graphql(
+          `#graphql
+          query getProduct($id: ID!) {
+            product(id: $id) {
+              title
+              featuredMedia { preview { image { url } } }
+            }
+          }`,
+          { variables: { id: item.productId } },
+        );
+        const responseJson = await response.json();
+        const product = responseJson.data?.product;
+
+        return {
+          ...item,
+          title: product?.title || "Unknown Product",
+          image: product?.featuredMedia?.preview?.image?.url || "",
+          revenue: 0,
+        };
+      } catch (e) {
+        return { ...item, title: "Product Deleted", image: "", revenue: 0 };
+      }
+    }),
   );
 
   return json({
-    totalRevenue,
-    totalOrders,
-    inRadiusCount,
-    totalChecks,
-    conversionRate: totalChecks > 0 ? (inRadiusCount / totalChecks) * 100 : 0,
-    recoveredCarts: recoveredCarts.length,
-    recoveredRevenue,
-    recentConversions: conversions,
+    isPro,
+    recentConversions,
+    advancedStats,
+    trendingProducts: enrichedProducts,
   });
-}
+};
 
-export default function Insights() {
+export default function InsightsRoute() {
   const data = useLoaderData<typeof loader>();
 
-  const tableRows = data.recentConversions.map((conv: any) => [
-    conv.orderId,
-    `$${conv.orderValue.toFixed(2)}`,
-    <Badge
-      key={conv.id}
-      tone={conv.source === "delivery_badge" ? "success" : "info"}
-    >
-      {conv.source.replace("_", " ")}
-    </Badge>,
-    new Date(conv.createdAt).toLocaleDateString(),
-  ]);
-
   return (
-    <Page title="Revenue Insights">
-      <Layout>
-        <Layout.Section>
-          <InlineGrid columns={{ xs: 1, md: 3 }} gap="400">
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h3" variant="headingMd">
-                  Revenue Attributed
-                </Text>
-                <Text as="p" variant="heading2xl" fontWeight="bold">
-                  ${data.totalRevenue.toFixed(2)}
-                </Text>
-                <Text as="p" tone="subdued">
-                  {data.totalOrders} orders in last 30 days
-                </Text>
-              </BlockStack>
-            </Card>
-
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h3" variant="headingMd">
-                  Delivery Zone Coverage
-                </Text>
-                <Text as="p" variant="heading2xl" fontWeight="bold">
-                  {data.conversionRate.toFixed(1)}%
-                </Text>
-                <Text as="p" tone="subdued">
-                  {data.inRadiusCount} of {data.totalChecks} customers in range
-                </Text>
-              </BlockStack>
-            </Card>
-
-            <Card>
-              <BlockStack gap="200">
-                <Text as="h3" variant="headingMd">
-                  Cart Recovery
-                </Text>
-                <Text as="p" variant="heading2xl" fontWeight="bold">
-                  ${data.recoveredRevenue.toFixed(2)}
-                </Text>
-                <Text as="p" tone="subdued">
-                  {data.recoveredCarts} carts recovered
-                </Text>
-              </BlockStack>
-            </Card>
-          </InlineGrid>
-        </Layout.Section>
-
-        <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <Text as="h3" variant="headingMd">
-                Recent Conversions
-              </Text>
-              {tableRows.length > 0 ? (
-                <DataTable
-                  columnContentTypes={["text", "numeric", "text", "text"]}
-                  headings={["Order ID", "Value", "Source", "Date"]}
-                  rows={tableRows}
-                />
-              ) : (
-                <EmptyState
-                  heading="No conversions yet"
-                  image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-                >
-                  <p>
-                    Your revenue data will appear here once customers start
-                    converting.
-                  </p>
-                </EmptyState>
-              )}
-            </BlockStack>
-          </Card>
-        </Layout.Section>
-      </Layout>
+    <Page title="Deep Revenue Insights">
+      <TitleBar title="Deep Revenue Insights" />
+      <BlockStack gap="400">
+        <InsightsTab
+          isPro={data.isPro}
+          trendingProducts={data.trendingProducts}
+          recentConversions={data.recentConversions}
+          stats={data.advancedStats}
+        />
+      </BlockStack>
     </Page>
   );
 }

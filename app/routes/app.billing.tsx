@@ -11,6 +11,7 @@ import {
   Badge,
   Box,
   IndexTable,
+  Banner,
 } from "@shopify/polaris";
 import {
   CheckCircleIcon,
@@ -20,13 +21,37 @@ import {
 } from "@shopify/polaris-icons";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { Form, useNavigation } from "@remix-run/react";
+import { Form, useNavigation, useLoaderData } from "@remix-run/react";
 import { authenticate } from "../shopify.server";
 import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "../constants";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  return { apiKey: process.env.SHOPIFY_API_KEY, shop: session.shop };
+  const { session, billing } = await authenticate.admin(request);
+
+  const billingCheck = await billing.check({
+    plans: [MONTHLY_PLAN_PRO, MONTHLY_PLAN_BASIC],
+    isTest: true,
+  });
+
+  const subscription = billingCheck.appSubscriptions.find(
+    (sub) => sub.status === "ACTIVE",
+  );
+
+  let trialDaysLeft = 0;
+  if (subscription && subscription.trialDays) {
+    const createdAt = new Date(subscription.createdAt);
+    const trialLength = subscription.trialDays;
+    const now = new Date();
+    const diffInMs = now.getTime() - createdAt.getTime();
+    const daysPassed = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    trialDaysLeft = Math.max(0, trialLength - daysPassed);
+  }
+
+  return json({
+    apiKey: process.env.SHOPIFY_API_KEY,
+    shop: session.shop,
+    trialDaysLeft, // 👇 Now being returned correctly
+  });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -56,6 +81,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function BillingPage() {
+  const data = useLoaderData<typeof loader>();
   const nav = useNavigation();
   const isSubmitting = nav.state === "submitting" || nav.state === "loading";
 
@@ -80,23 +106,46 @@ export default function BillingPage() {
 
   return (
     <Page
-      title="Unlock AI Cart Recovery"
+      title="Plans & Billing"
       subtitle="Rescue local delivery drop-offs before they buy from a competitor."
       backAction={{ content: "Dashboard", url: "/app" }}
     >
-      <BlockStack gap="800">
+      <BlockStack gap="500">
+        {/* TRIAL STATUS BANNER */}
+        {data.trialDaysLeft > 0 && (
+          <Banner tone="info">
+            <BlockStack gap="200">
+              <Text as="p">
+                You are currently in your <strong>14-day free trial</strong>.
+                There are <strong>{data.trialDaysLeft} days</strong> remaining.
+              </Text>
+              <Text as="p" variant="bodySm">
+                Your selected plan will begin automatically once the trial ends.
+                You can change plans or cancel at any time.
+              </Text>
+            </BlockStack>
+          </Banner>
+        )}
+
         <Layout>
           {/* BASIC PLAN */}
           <Layout.Section variant="oneHalf">
             <Card>
               <Box minHeight="380px">
                 <BlockStack gap="400">
-                  <InlineStack gap="200">
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      height: "32px",
+                    }}
+                  >
                     <Icon source={LocationIcon} tone="base" />
                     <Text as="h2" variant="headingMd">
                       Basic Recovery
                     </Text>
-                  </InlineStack>
+                  </div>
                   <BlockStack gap="100">
                     <Text as="h1" variant="headingLg">
                       $29.00{" "}
@@ -136,13 +185,20 @@ export default function BillingPage() {
             <Card background="bg-surface-secondary">
               <Box minHeight="380px">
                 <BlockStack gap="400">
-                  <InlineStack align="space-between">
-                    <InlineStack gap="200">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        height: "32px",
+                      }}
+                    >
                       <Icon source={StarIcon} tone="warning" />
                       <Text as="h2" variant="headingMd">
                         Pro Suite
                       </Text>
-                    </InlineStack>
+                    </div>
                     <Badge tone="success">MOST POPULAR</Badge>
                   </InlineStack>
                   <BlockStack gap="100">
@@ -194,21 +250,13 @@ export default function BillingPage() {
 
         <Box paddingBlockEnd="800">
           <InlineStack align="center" gap="200">
-            <Box>
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <Icon source={CashDollarIcon} tone="base" />
-              </div>
-            </Box>
-            <div
-              style={{ display: "flex", alignItems: "center", height: "20px" }}
-            >
-              <Text as="span" tone="subdued" variant="bodySm">
-                Secure payments processed natively by Shopify. Cancel anytime.
-              </Text>
-            </div>
+            <Icon source={CashDollarIcon} tone="base" />
+            <Text as="span" tone="subdued" variant="bodySm">
+              Secure payments processed natively by Shopify. Cancel anytime.
+            </Text>
           </InlineStack>
         </Box>
-        {/* FEATURE COMPARISON TABLE */}
+
         <Layout.Section>
           <Card padding="0">
             <Box padding="400">
@@ -239,7 +287,6 @@ export default function BillingPage() {
                   basic: "Fixed (6 miles)",
                   pro: "Custom (Unlimited)",
                 },
-                // 👇 UPDATED FEATURE ROW 👇
                 {
                   id: "3",
                   name: "Storefront Widget Design",
@@ -252,12 +299,7 @@ export default function BillingPage() {
                   basic: "Standard Template",
                   pro: "Autonomous AI Agent",
                 },
-                {
-                  id: "5",
-                  name: "A/B Offer Testing",
-                  basic: false,
-                  pro: true,
-                },
+                { id: "5", name: "A/B Offer Testing", basic: false, pro: true },
                 {
                   id: "6",
                   name: "Revenue Leaks Detection",
