@@ -1,6 +1,54 @@
+import { Resend } from "resend";
 import db from "../db.server";
 import { geocodeAddress } from "./geocoding.server";
 import { calculateDistance, getRadiusInMiles } from "./proximity.server";
+
+// Initialize Resend with the key from your .env
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+/**
+ * Utility function to dispatch emails via Resend.
+ * You can now call this from agent.server.ts to keep the AI logic separated from the email delivery logic.
+ */
+export async function sendRecoveryEmail(
+  shop: string,
+  customerEmail: string,
+  subject: string,
+  htmlBody: string,
+  textBody: string,
+  merchantReplyTo?: string,
+) {
+  try {
+    // Format shop name beautifully (e.g., "my-store.myshopify.com" -> "My Store")
+    const storeName = shop
+      .split(".")[0]
+      .split("-")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+
+    const { data, error } = await resend.emails.send({
+      from: `${storeName} <hello@logiclooms.io>`,
+      replyTo: merchantReplyTo || "hello@logiclooms.io",
+      to: customerEmail,
+      subject: subject,
+      html: htmlBody,
+      text: textBody,
+    });
+
+    if (error) {
+      console.error("[Resend] Failed to send email:", error);
+      return false;
+    }
+
+    console.log(
+      `[Resend] Successfully sent recovery email to ${customerEmail}. ID: ${data?.id}`,
+    );
+    return true;
+  } catch (error) {
+    console.error("[Resend] Exception sending email:", error);
+    return false;
+  }
+}
 
 export async function processAbandonedCarts(shop: string) {
   console.log(
