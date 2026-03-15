@@ -12,7 +12,12 @@ import { Page, Box, BlockStack, Banner, Text } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "../constants";
+import {
+  ALL_PAID_PLANS,
+  BASIC_PLANS,
+  PRO_PLANS,
+  ELITE_PLANS,
+} from "../constants";
 import { RevenueSuiteTab } from "../components/RevenueSuiteTab";
 import OpenAI from "openai";
 
@@ -20,15 +25,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
   const shop = session.shop;
 
+  const planCheckArray: any = ALL_PAID_PLANS;
+
   const billingCheck = await billing.check({
-    plans: [MONTHLY_PLAN_PRO, MONTHLY_PLAN_BASIC],
+    plans: planCheckArray,
     isTest: true,
   });
 
   const subscription = billingCheck.appSubscriptions.find(
     (sub) => sub.status === "ACTIVE",
   );
-  const isPro = subscription?.name === MONTHLY_PLAN_PRO;
+
+  const activePlanName = subscription?.name || "";
+  const isBasic = BASIC_PLANS.includes(activePlanName);
+  const isPro = PRO_PLANS.includes(activePlanName);
+  const isElite = ELITE_PLANS.includes(activePlanName);
 
   let settings = await prisma.appSettings.findUnique({ where: { shop } });
 
@@ -76,7 +87,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     _sum: { orderValue: true },
   });
   const currentMonthRevenue = currentMonthData._sum.orderValue || 0;
-  const hasReachedBasicLimit = !isPro && currentMonthRevenue >= 1000;
+
+  // Dynamic Limit Checks
+  const hasReachedBasicLimit = isBasic && currentMonthRevenue >= 1000;
+  const hasReachedProLimit = isPro && currentMonthRevenue >= 5000;
 
   // 4. Get the Daily Goal
   const dailyGoal = settings?.dailyGoal || 500;
@@ -99,11 +113,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     todayRevenue,
     currentMonthRevenue,
     hasReachedBasicLimit,
+    hasReachedProLimit,
     conversionRate,
     recentConversions,
     dailyGoal,
     goalProgress: Math.min(goalProgress, 100).toFixed(0),
+    isBasic,
     isPro,
+    isElite,
     isDev: process.env.NODE_ENV === "development",
   });
 };
@@ -262,12 +279,17 @@ export default function Index() {
     }
   }, [fetcher.data, shopify]);
 
+  const hasLimitBanner = data.hasReachedBasicLimit || data.hasReachedProLimit;
+  const hasUpgradeBanner = data.isBasic || data.isPro;
+  const shouldAddPadding =
+    hasLimitBanner || (hasUpgradeBanner && !hasLimitBanner);
+
   return (
     <Page title="SwiftFlow: Revenue Suite">
       <TitleBar title="SwiftFlow: Revenue Suite" />
 
       <BlockStack gap="400">
-        {/* 🚨 DYNAMIC BILLING & STATUS BANNERS 🚨 */}
+        {/* 🚨 DYNAMIC LIMIT BANNERS 🚨 */}
         {data.hasReachedBasicLimit ? (
           <Banner
             title="Revenue Limit Reached: AI Agent Paused"
@@ -278,27 +300,49 @@ export default function Index() {
               Congratulations! You have successfully recovered{" "}
               <strong>${data.currentMonthRevenue.toFixed(2)}</strong> this
               month, hitting your Basic plan limit. Upgrade to the Pro Suite for
-              just an additional <strong>$20/month</strong> to unlock unlimited
-              revenue recovery and get your AI Agent back to work instantly.
+              just an additional <strong>$20/month</strong> to unlock up to
+              $5,000 in revenue recovery and reactivate your AI Agent instantly.
             </Text>
           </Banner>
-        ) : !data.isPro ? (
+        ) : data.hasReachedProLimit ? (
+          <Banner
+            title="Pro Revenue Limit Reached: AI Agent Paused"
+            tone="critical"
+            action={{ content: "Upgrade to Elite", url: "/app/billing" }}
+          >
+            <Text as="p">
+              Incredible! You have successfully recovered{" "}
+              <strong>${data.currentMonthRevenue.toFixed(2)}</strong> this
+              month, hitting your Pro Suite limit. Upgrade to Elite Enterprise
+              to unlock <strong>unlimited</strong> revenue recovery and
+              reactivate your AI Agent.
+            </Text>
+          </Banner>
+        ) : data.isBasic ? (
+          /* 💡 DYNAMIC UPSELL BANNERS (Only show if not limited) 💡 */
           <Banner
             tone="info"
             action={{ content: "Upgrade to Pro", url: "/app/billing" }}
           >
             <Text as="p">
               <strong>Basic Plan Active:</strong> Upgrade to Pro to unlock
-              Autonomous AI Emails and unlimited recovered revenue.
+              Autonomous AI Emails and higher recovery limits.
+            </Text>
+          </Banner>
+        ) : data.isPro ? (
+          <Banner
+            tone="info"
+            action={{ content: "Upgrade to Elite", url: "/app/billing" }}
+          >
+            <Text as="p">
+              <strong>Pro Suite Active:</strong> Scale your business by
+              upgrading to Elite Enterprise to unlock unlimited recovered
+              revenue.
             </Text>
           </Banner>
         ) : null}
 
-        <Box
-          paddingBlockStart={
-            data.hasReachedBasicLimit || !data.isPro ? "200" : "0"
-          }
-        >
+        <Box paddingBlockStart={shouldAddPadding ? "200" : "0"}>
           <RevenueSuiteTab
             data={data.settings}
             fetcher={fetcher}
@@ -315,7 +359,7 @@ export default function Index() {
             recentConversions={data.recentConversions}
             shop={data.shop}
             onResetData={onResetData}
-            isPro={data.isPro}
+            isPro={data.isPro || data.isElite} // Both Pro and Elite unlock Pro features in the UI
             navigate={navigate}
             isDev={data.isDev}
           />

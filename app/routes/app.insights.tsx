@@ -5,22 +5,26 @@ import { Page, BlockStack } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "../constants";
+import { ALL_PAID_PLANS, PRO_PLANS, ELITE_PLANS } from "../constants";
 import { InsightsTab } from "../components/InsightsTab";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session, billing } = await authenticate.admin(request);
   const shop = session.shop;
 
+  const planCheckArray: any = ALL_PAID_PLANS;
   const billingCheck = await billing.check({
-    plans: [MONTHLY_PLAN_PRO, MONTHLY_PLAN_BASIC],
+    plans: planCheckArray,
     isTest: true,
   });
 
   const subscription = billingCheck.appSubscriptions.find(
     (sub) => sub.status === "ACTIVE",
   );
-  const isPro = subscription?.name === MONTHLY_PLAN_PRO;
+
+  const activePlanName = subscription?.name || "";
+  const isPro =
+    PRO_PLANS.includes(activePlanName) || ELITE_PLANS.includes(activePlanName);
 
   // 1. Recent Conversions
   const recentConversions = await prisma.conversionEvent.findMany({

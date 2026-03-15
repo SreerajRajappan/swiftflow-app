@@ -3,14 +3,14 @@ import db from "./db.server";
 import shopify from "./shopify.server";
 import { estimateDeliveryTime } from "./services/proximity.server";
 import { sendRecoveryEmail } from "./services/email.server";
-import { MONTHLY_PLAN_PRO } from "./constants";
+import { BASIC_PLANS, PRO_PLANS, ELITE_PLANS } from "./constants";
 
 const openai = new OpenAI(); // Automatically uses process.env.OPENAI_API_KEY
 
 /**
- * Validates if a shop is currently subscribed to the Pro Plan via Shopify Billing API.
+ * Retrieves the current active plan level for the shop via Shopify Billing API.
  */
-async function isShopPro(shop: string): Promise<boolean> {
+async function getShopPlanLevel(shop: string) {
   try {
     const { admin } = await shopify.unauthenticated.admin(shop);
     const response = await admin.graphql(`
@@ -25,12 +25,20 @@ async function isShopPro(shop: string): Promise<boolean> {
     `);
     const { data } = await response.json();
     const subs = data?.currentAppInstallation?.activeSubscriptions || [];
-    return subs.some(
-      (sub: any) => sub.name === MONTHLY_PLAN_PRO && sub.status === "ACTIVE",
-    );
+
+    // Find the currently active subscription
+    const activeSub = subs.find((sub: any) => sub.status === "ACTIVE");
+    const activePlanName = activeSub?.name || "";
+
+    return {
+      isBasic: BASIC_PLANS.includes(activePlanName),
+      isPro: PRO_PLANS.includes(activePlanName),
+      isElite: ELITE_PLANS.includes(activePlanName),
+    };
   } catch (err) {
     console.error(`[Billing Check] Failed to check plan for ${shop}`, err);
-    return false; // Default to basic if API fails
+    // 🚨 Default to Basic if API fails to prevent free Pro/Elite access
+    return { isBasic: true, isPro: false, isElite: false };
   }
 }
 
@@ -58,7 +66,7 @@ export async function runCartRecoveryAgent(shop?: string) {
     console.log(`🤖 [AI Agent] Found ${pendingCarts.length} carts to process.`);
 
     for (const cart of pendingCarts) {
-      // 🚨 BILLING ENFORCEMENT CHECK 🚨
+      // 🚨 TIERED BILLING ENFORCEMENT CHECK 🚨
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
@@ -70,19 +78,33 @@ export async function runCartRecoveryAgent(shop?: string) {
 
       const totalMonthlyRevenue = currentMonthRevenue._sum.orderValue || 0;
 
-      if (totalMonthlyRevenue >= 1000) {
-        const isPro = await isShopPro(cart.shop);
-        if (!isPro) {
-          console.log(
-            `[Billing] ${cart.shop} exceeded $1,000 basic limit (Current: $${totalMonthlyRevenue}). Skipping cart ${cart.cartToken}.`,
-          );
-          await db.cartRecovery.update({
-            where: { id: cart.id },
-            data: { agentStatus: "LIMIT_REACHED" }, // Custom status so you know why it stopped
-          });
-          continue;
-        }
+      const planLevel = await getShopPlanLevel(cart.shop);
+
+      // Enforce Basic Limit ($1,000)
+      if (planLevel.isBasic && totalMonthlyRevenue >= 1000) {
+        console.log(
+          `[Billing] ${cart.shop} exceeded $1,000 Basic limit (Current: $${totalMonthlyRevenue}). Skipping cart ${cart.cartToken}.`,
+        );
+        await db.cartRecovery.update({
+          where: { id: cart.id },
+          data: { agentStatus: "LIMIT_REACHED" },
+        });
+        continue;
       }
+
+      // Enforce Pro Limit ($5,000)
+      if (planLevel.isPro && totalMonthlyRevenue >= 5000) {
+        console.log(
+          `[Billing] ${cart.shop} exceeded $5,000 Pro limit (Current: $${totalMonthlyRevenue}). Skipping cart ${cart.cartToken}.`,
+        );
+        await db.cartRecovery.update({
+          where: { id: cart.id },
+          data: { agentStatus: "LIMIT_REACHED" },
+        });
+        continue;
+      }
+
+      // If Elite, or under limits for Basic/Pro, proceed with the agent!
 
       // --- FIX: Prevent Memory Leak by taking only the 50 most recent leaks ---
       const leaks = await db.revenueLeak.findMany({
@@ -131,7 +153,7 @@ export async function runCartRecoveryAgent(shop?: string) {
       const productNames =
         items?.map((item) => item.title).join(", ") || "your selected items";
 
-      // --- FIX: A/B Test Bug. Only inject if A/B testing is actually ON ---
+      // 6. Inject A/B Testing Context
       let abContext = "";
       if (settings.abTestEnabled) {
         const abMessage =
@@ -199,7 +221,7 @@ export async function runCartRecoveryAgent(shop?: string) {
 
         const finalEmailText = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
 
-        // 8. DISPATCH: Send the actual email via the utility we built earlier
+        // 8. DISPATCH: Send the actual email via the utility
         const sendSuccess = await sendRecoveryEmail(
           cart.shop,
           cart.customerEmail,

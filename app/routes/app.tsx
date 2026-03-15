@@ -6,7 +6,7 @@ import { AppProvider } from "@shopify/shopify-app-remix/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import { authenticate } from "../shopify.server";
-import { MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO } from "../constants";
+import { ALL_PAID_PLANS } from "../constants";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -14,10 +14,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
   const url = new URL(request.url);
 
+  const planCheckArray: any = ALL_PAID_PLANS;
   // IMPORTANT: Strict billing check preserved
   if (url.pathname !== "/app/billing") {
     await billing.require({
-      plans: [MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO],
+      plans: planCheckArray,
       isTest: true,
       onFailure: async () => {
         throw redirect(`/app/billing${url.search}`);

@@ -39,7 +39,7 @@ const shopify = shopifyApp({
     },
   },
   billing: {
-    "Basic Plan": {
+    "Basic Plan - Monthly": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       trialDays: 14,
       lineItems: [
@@ -50,7 +50,18 @@ const shopify = shopifyApp({
         },
       ],
     },
-    "Pro Plan": {
+    "Basic Plan - Annual": {
+      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      trialDays: 14,
+      lineItems: [
+        {
+          amount: 279.0,
+          currencyCode: "USD",
+          interval: BillingInterval.Annual,
+        },
+      ],
+    },
+    "Pro Suite - Monthly": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       trialDays: 14,
       lineItems: [
@@ -58,6 +69,39 @@ const shopify = shopifyApp({
           amount: 49.0,
           currencyCode: "USD",
           interval: BillingInterval.Every30Days,
+        },
+      ],
+    },
+    "Pro Suite - Annual": {
+      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      trialDays: 14,
+      lineItems: [
+        {
+          amount: 469.0,
+          currencyCode: "USD",
+          interval: BillingInterval.Annual,
+        },
+      ],
+    },
+    "Elite Suite - Monthly": {
+      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      trialDays: 14,
+      lineItems: [
+        {
+          amount: 99.0,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        },
+      ],
+    },
+    "Elite Suite - Annual": {
+      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      trialDays: 14,
+      lineItems: [
+        {
+          amount: 949.0,
+          currencyCode: "USD",
+          interval: BillingInterval.Annual,
         },
       ],
     },
