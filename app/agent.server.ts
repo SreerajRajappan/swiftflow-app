@@ -93,21 +93,29 @@ export async function runCartRecoveryAgent(shop?: string) {
         etaContext = `Estimated delivery time for their address is ${estimateDeliveryTime(distanceMiles)}.`;
       }
 
+      // --- UPDATED: Use the Merchant's Saved Core Prompt ---
       // 7. Generate the Hyper-Local AI Content
       const prompt = `
         You are an expert e-commerce copywriter for a local store named ${cart.shop}. 
         A customer just abandoned their cart containing: ${productNames}.
         
+        MERCHANT'S CORE MESSAGE / STYLE GUIDE:
+        "${settings.recoveryEmailBody}"
+
         CRITICAL CONTEXT:
         - ${distanceContext}
         - ${etaContext}
 
-        Write a warm, 3-sentence email to encourage them to complete their $${cart.cartValue} order.
-        Make sure to emphasize how close they are to the store to highlight fast local delivery.
-        If an estimated delivery time is provided above, explicitly mention it (e.g., "We can have this to your door in [ETA]").
-        Include this specific offer seamlessly: "${abMessage}"
+        Write a warm, highly-converting email to encourage them to complete their $${cart.cartValue} order.
         
-        No subject line. Just the email body.
+        RULES:
+        1. Base your writing style and main message strictly on the "Core Message" provided by the merchant above.
+        2. Seamlessly mention the specific items they left behind.
+        3. Emphasize how close they are to the store to highlight fast local delivery.
+        4. If an estimated delivery time is provided above, explicitly mention it (e.g., "We can have this to your door in [ETA]").
+        5. Include this specific A/B test offer seamlessly into the text: "${abMessage}"
+        6. Keep it concise (under 3 paragraphs).
+        7. No subject line. Just the email body.
       `;
 
       const response = await openai.chat.completions.create({

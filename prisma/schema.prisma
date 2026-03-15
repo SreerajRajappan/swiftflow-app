@@ -53,6 +53,8 @@ model AppSettings {
   abTestEnabled        Boolean  @default(false)
   abTestMessageA       String   @default("We deliver to your area!")
   abTestMessageB       String   @default("Fast local delivery available!")
+
+  dailyGoal            Float    @default(500)
   
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt

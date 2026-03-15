@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import confetti from "canvas-confetti";
 import {
@@ -24,6 +24,7 @@ import { RevenueLeaksTab } from "../components/RevenueLeaksTab";
 import { processAbandonedCarts } from "../services/email.server";
 import { runCartRecoveryAgent } from "../agent.server";
 import { geocodeAddress } from "~/services/geocoding.server";
+import OpenAI from "openai";
 
 const LOCATION_QUERY = `#graphql
   query GetPrimaryLocation {
@@ -77,10 +78,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     _count: { id: true },
   });
 
+  // 1. All-time revenue for the Stat Box
   const totalRevenue = conversionData._sum.orderValue || 0;
   const conversionCount = conversionData._count.id || 0;
-  const dailyGoal = 500;
-  const goalProgress = (totalRevenue / dailyGoal) * 100;
+
+  // 2. Calculate Today's Revenue for the Daily Goal
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const todaysConversions = await prisma.conversionEvent.findMany({
+    where: {
+      shop,
+      createdAt: { gte: startOfToday },
+    },
+  });
+
+  const todayRevenue = todaysConversions.reduce(
+    (sum, conv) => sum + conv.orderValue,
+    0,
+  );
+
+  // 3. Get the Daily Goal (allow merchant custom setting, default to 500)
+  const dailyGoal = settings?.dailyGoal || 500;
+  const goalProgress = (todayRevenue / dailyGoal) * 100;
   const conversionRate =
     totalViews > 0 ? ((conversionCount / totalViews) * 100).toFixed(2) : "0.00";
 
@@ -114,6 +134,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   );
 
   const advancedStats = {
+    todayRevenue,
     totalRevenue: allConversions.reduce((s, c) => s + c.orderValue, 0),
     totalOrders: allConversions.length,
     badgeRevenue: badgeConversions.reduce((s, c) => s + c.orderValue, 0),
@@ -190,7 +211,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let unitSystem = settings?.unitSystem ?? "IMPERIAL";
   let locationWarning = false;
 
-  // Inside app/routes/app._index.tsx Loader
   try {
     const res = await admin.graphql(LOCATION_QUERY);
     const body = await res.json();
@@ -265,6 +285,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     totalViews,
     totalRevenue,
+    todayRevenue,
     activeLeaks,
     conversionRate,
     recentConversions,
@@ -281,6 +302,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     googleMapsApiKey: process.env.SHOPIFY_GOOGLE_MAPS_KEY ?? "",
     googleMapId: process.env.SHOPIFY_MAP_ID ?? "",
     advancedStats,
+    isDev: process.env.NODE_ENV === "development",
   });
 };
 
@@ -363,6 +385,79 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  if (intent === "save-suite-config") {
+    const subject = formData.get("recoveryEmailSubject") as string;
+    const body = formData.get("recoveryEmailBody") as string;
+    const newGoal = parseFloat(formData.get("dailyGoal") as string) || 500;
+
+    const abTestEnabled = formData.get("abTestEnabled") === "true";
+    const abTestMessageA = formData.get("abTestMessageA") as string;
+    const abTestMessageB = formData.get("abTestMessageB") as string;
+
+    await prisma.appSettings.upsert({
+      where: { shop },
+      create: {
+        shop,
+        recoveryEmailSubject: subject,
+        recoveryEmailBody: body,
+        dailyGoal: newGoal,
+        abTestEnabled,
+        abTestMessageA,
+        abTestMessageB,
+      },
+      update: {
+        recoveryEmailSubject: subject,
+        recoveryEmailBody: body,
+        dailyGoal: newGoal,
+        abTestEnabled,
+        abTestMessageA,
+        abTestMessageB,
+      },
+    });
+
+    return json({
+      success: true,
+      intent: "save-suite-config",
+      message: "Revenue Suite configuration saved!",
+    });
+  }
+
+  if (intent === "generate-ai-prompt") {
+    const theme = formData.get("templateTheme") || "neighborhood";
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const promptInstructions = `
+      You are an expert e-commerce copywriter for a local business.
+      The merchant selected the "${theme}" theme for local delivery abandoned carts.
+      
+      Write a highly converting, brief 1-to-2 sentence email body that the merchant can use as their base message.
+      It MUST be concise (under 25 words).
+      It should sound like it's written directly to the customer, emphasizing local delivery and convenience.
+      Do NOT include subject lines, greetings, or placeholders. Ensure perfect spelling and grammar.
+      Just write the raw email text directly.
+    `;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: promptInstructions }],
+        temperature: 0.7,
+      });
+
+      return json({
+        success: true,
+        generatedPrompt: response.choices[0].message.content?.trim(),
+      });
+    } catch (error) {
+      console.error("AI Generation Error:", error);
+      return json(
+        { success: false, error: "Failed to generate prompt" },
+        { status: 500 },
+      );
+    }
+  }
+
   return json({ error: "Unknown intent" }, { status: 400 });
 };
 
@@ -378,10 +473,12 @@ export default function Index() {
     isPro,
     trialDaysLeft,
     totalRevenue,
+    todayRevenue,
     conversionRate,
     dailyGoal,
     goalProgress,
     recentConversions,
+    isDev,
   } = data;
 
   const actionData = useActionData<typeof action>();
@@ -459,19 +556,26 @@ export default function Index() {
     );
   };
 
-  const lastCelebratedRevenue = useRef(0);
-
   useEffect(() => {
-    // Only fire if goal is met, we are on the Home tab, AND the revenue has increased since the last celebration
+    // Only fire if goal is met AND we haven't already celebrated today in this browser session
+    const hasCelebratedToday = sessionStorage.getItem(
+      `celebrated_${dailyGoal}`,
+    );
+
     if (
       parseFloat(goalProgress) >= 100 &&
       selectedTab === 0 &&
-      totalRevenue > lastCelebratedRevenue.current
+      !hasCelebratedToday
     ) {
       confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-      lastCelebratedRevenue.current = totalRevenue;
+      sessionStorage.setItem(`celebrated_${dailyGoal}`, "true");
     }
-  }, [goalProgress, selectedTab, totalRevenue]);
+
+    // If they change their goal to a higher amount, reset the celebration flag
+    if (parseFloat(goalProgress) < 100) {
+      sessionStorage.removeItem(`celebrated_${dailyGoal}`);
+    }
+  }, [goalProgress, selectedTab, dailyGoal]);
 
   useEffect(() => {
     if (actionData && "success" in actionData && actionData.success) {
@@ -552,6 +656,7 @@ export default function Index() {
                 data={settings}
                 fetcher={deliveryFetcher}
                 totalRevenue={totalRevenue}
+                todayRevenue={todayRevenue}
                 dailyGoal={dailyGoal}
                 goalProgress={goalProgress}
                 isEnabled={isEnabled}
@@ -565,6 +670,7 @@ export default function Index() {
                 onResetData={onResetData}
                 isPro={isPro}
                 navigate={navigate}
+                isDev={isDev}
               />
             )}
             {selectedTab === 1 && (

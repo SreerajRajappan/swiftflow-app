@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Layout,
   BlockStack,
@@ -27,6 +27,7 @@ interface RevenueSuiteProps {
   data: any;
   fetcher: any;
   totalRevenue: number;
+  todayRevenue: number;
   dailyGoal: number;
   goalProgress: string;
   isEnabled: boolean;
@@ -40,6 +41,7 @@ interface RevenueSuiteProps {
   onResetData: () => void;
   isPro: boolean;
   navigate: (path: string) => void;
+  isDev: boolean;
 }
 
 const TEMPLATES = {
@@ -47,21 +49,21 @@ const TEMPLATES = {
     subject: "Good news! We deliver right to your neighborhood 🏡",
     basicBody:
       "You left some great items in your cart! The good news is you are well within our local delivery zone. Complete your order today and we'll bring it right to your door.",
-    proBody:
+    proPrompt:
       "Write a friendly, neighborly email letting the customer know they left items behind. Emphasize that because they live in our local delivery zone, we can get their specific cart items delivered to them quickly. Keep the tone warm and helpful.",
   },
   fresh: {
     subject: "Craving something? Let us bring it to your door 🚚",
     basicBody:
       "Don't miss out! Your cart is waiting, and our team is ready to prep and deliver your order straight to your door. Click here to finish checking out so we can get started.",
-    proBody:
+    proPrompt:
       "Draft an enticing, slightly urgent message. Mention that we verified their address is within our fast-delivery radius. Encourage them to complete their order so we can start preparing their items fresh and dispatch our local driver.",
   },
   save_trip: {
     subject: "Save yourself a trip! Local delivery is available.",
     basicBody:
       "Why drive when we can deliver? You left some items in your cart, and we offer fast local delivery right to your area. Finish your order and let us do the heavy lifting.",
-    proBody:
+    proPrompt:
       "Create a helpful, service-oriented email. Point out that we offer local delivery to their specific area, saving them a trip to the store. Seamlessly mention the items in their cart and offer to bring everything directly to them to save them time.",
   },
 };
@@ -70,6 +72,7 @@ export function RevenueSuiteTab({
   data,
   fetcher,
   totalRevenue,
+  todayRevenue,
   dailyGoal,
   goalProgress,
   isEnabled,
@@ -82,14 +85,18 @@ export function RevenueSuiteTab({
   onResetData,
   isPro,
   navigate,
+  isDev,
 }: RevenueSuiteProps) {
+  const [localDailyGoal, setLocalDailyGoal] = useState(
+    dailyGoal?.toString() || "500",
+  );
+  const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [template, setTemplate] = useState("custom");
   const [subject, setSubject] = useState(
     data?.recoveryEmailSubject || "Good news! We deliver to you!",
   );
   const [body, setBody] = useState(
-    data?.recoveryEmailBody ||
-      "You left something behind! Great news — we deliver directly to your area. Come back and complete your order.",
+    data?.recoveryEmailBody || (isPro ? "" : TEMPLATES.neighborhood.basicBody),
   );
   const [abEnabled, setAbEnabled] = useState(data?.abTestEnabled || false);
   const [msgA, setMsgA] = useState(
@@ -101,9 +108,39 @@ export function RevenueSuiteTab({
       "Your address qualifies for our special local delivery!",
   );
 
+  const [isWaitingForAi, setIsWaitingForAi] = useState(false);
+
+  // State to track if we were previously saving to accurately close the edit box
+  const [wasLocalSaving, setWasLocalSaving] = useState(false);
+
   const isLocalSaving =
     fetcher.state === "submitting" &&
     fetcher.formData?.get("intent") === "save-suite-config";
+
+  const isGeneratingPrompt =
+    fetcher.state === "submitting" &&
+    fetcher.formData?.get("intent") === "generate-ai-prompt";
+
+  useEffect(() => {
+    if (
+      fetcher.state === "idle" &&
+      isWaitingForAi &&
+      fetcher.data?.generatedPrompt
+    ) {
+      setBody(fetcher.data.generatedPrompt);
+      setIsWaitingForAi(false);
+    }
+  }, [fetcher.state, fetcher.data, isWaitingForAi]);
+
+  // Bulletproof listener to close edit mode after save completes
+  useEffect(() => {
+    if (isLocalSaving) {
+      setWasLocalSaving(true);
+    } else if (wasLocalSaving && fetcher.state === "idle") {
+      setIsEditingGoal(false);
+      setWasLocalSaving(false);
+    }
+  }, [isLocalSaving, fetcher.state, wasLocalSaving]);
 
   const handleTemplateChange = useCallback(
     (value: string) => {
@@ -111,7 +148,11 @@ export function RevenueSuiteTab({
       if (value !== "custom") {
         const selected = TEMPLATES[value as keyof typeof TEMPLATES];
         setSubject(selected.subject);
-        setBody(isPro ? selected.proBody : selected.basicBody);
+        if (isPro) {
+          setBody("");
+        } else {
+          setBody(selected.basicBody);
+        }
       }
     },
     [isPro],
@@ -119,24 +160,57 @@ export function RevenueSuiteTab({
 
   const handleSubjectChange = useCallback((value: string) => {
     setSubject(value);
-    setTemplate("custom"); // Switch to custom if user manually edits
+    setTemplate("custom");
   }, []);
 
   const handleBodyChange = useCallback((value: string) => {
     setBody(value);
-    setTemplate("custom"); // Switch to custom if user manually edits
+    setTemplate("custom");
   }, []);
+
+  const handleGeneratePrompt = useCallback(() => {
+    setIsWaitingForAi(true);
+    const form = new FormData();
+    form.append("intent", "generate-ai-prompt");
+    form.append(
+      "templateTheme",
+      template === "custom" ? "neighborhood" : template,
+    );
+    fetcher.submit(form, { method: "post" });
+  }, [fetcher, template]);
 
   const handleSaveConfig = useCallback(() => {
     const form = new FormData();
     form.append("intent", "save-suite-config");
+
+    const finalBody =
+      body.trim() === "" && isPro
+        ? TEMPLATES[
+            template === "custom"
+              ? "neighborhood"
+              : (template as keyof typeof TEMPLATES)
+          ].proPrompt
+        : body;
+
     form.append("recoveryEmailSubject", subject);
-    form.append("recoveryEmailBody", body);
+    form.append("recoveryEmailBody", finalBody);
     form.append("abTestEnabled", String(abEnabled));
     form.append("abTestMessageA", msgA);
     form.append("abTestMessageB", msgB);
+    form.append("dailyGoal", localDailyGoal.toString());
+
     fetcher.submit(form, { method: "post" });
-  }, [subject, body, abEnabled, msgA, msgB, fetcher]);
+  }, [
+    subject,
+    body,
+    abEnabled,
+    msgA,
+    msgB,
+    fetcher,
+    isPro,
+    template,
+    localDailyGoal,
+  ]);
 
   const templateOptions = [
     { label: "Custom / Manual Entry", value: "custom" },
@@ -144,6 +218,14 @@ export function RevenueSuiteTab({
     { label: "Fresh & Fast (Restaurants & Florists)", value: "fresh" },
     { label: "Save a Trip (Hardware & Supply)", value: "save_trip" },
   ];
+
+  const currentPlaceholder = isPro
+    ? TEMPLATES[
+        template === "custom"
+          ? "neighborhood"
+          : (template as keyof typeof TEMPLATES)
+      ].proPrompt
+    : "";
 
   return (
     <Box paddingBlockEnd="800">
@@ -175,9 +257,10 @@ export function RevenueSuiteTab({
                           Current Mission
                         </Text>
                         <Text as="p" variant="bodyMd" fontWeight="medium">
-                          Verifying delivery radiuses and scanning for abandoned
-                          carts ({">"}$50) within {data?.deliveryRadius || 10}{" "}
+                          Verifying delivery radiuses and scanning all abandoned
+                          carts within {data?.deliveryRadius || 10}{" "}
                           {data?.unitSystem === "METRIC" ? "km" : "miles"}.
+                          Carts {">"}$50 are flagged as Critical.
                         </Text>
                       </BlockStack>
 
@@ -234,33 +317,81 @@ export function RevenueSuiteTab({
 
             {/* DAILY GOAL */}
             <Card>
-              <BlockStack gap="200">
-                <InlineStack align="space-between">
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
                   <Text as="h2" variant="headingMd">
                     Daily Revenue Goal
                   </Text>
-                  <Text as="p" variant="bodyMd" fontWeight="bold">
-                    ${totalRevenue.toFixed(2)} / ${dailyGoal}
-                  </Text>
+                  {isEditingGoal ? (
+                    <InlineStack gap="200">
+                      <Button
+                        size="slim"
+                        onClick={() => setIsEditingGoal(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="slim"
+                        variant="primary"
+                        loading={isLocalSaving}
+                        onClick={handleSaveConfig}
+                      >
+                        Save
+                      </Button>
+                    </InlineStack>
+                  ) : (
+                    <Button
+                      size="slim"
+                      variant="secondary"
+                      onClick={() => setIsEditingGoal(true)}
+                    >
+                      Edit Goal
+                    </Button>
+                  )}
                 </InlineStack>
-                <div
-                  style={{
-                    width: "100%",
-                    backgroundColor: "var(--p-color-bg-surface-secondary)",
-                    borderRadius: "10px",
-                    height: "12px",
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${goalProgress}%`,
-                      backgroundColor: "var(--p-color-text-success)",
-                      height: "100%",
-                      transition: "width 0.5s",
-                    }}
+
+                {isEditingGoal ? (
+                  <TextField
+                    label="Target Daily Revenue ($)"
+                    type="number"
+                    value={localDailyGoal}
+                    onChange={setLocalDailyGoal}
+                    autoComplete="off"
+                    prefix="$"
                   />
-                </div>
+                ) : (
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between">
+                      <Text as="p" variant="bodyMd" tone="subdued">
+                        Today's Recovered Sales
+                      </Text>
+                      <Text as="p" variant="bodyMd" fontWeight="bold">
+                        ${todayRevenue.toFixed(2)} / ${dailyGoal}
+                      </Text>
+                    </InlineStack>
+                    <div
+                      style={{
+                        width: "100%",
+                        backgroundColor: "var(--p-color-bg-surface-secondary)",
+                        borderRadius: "10px",
+                        height: "12px",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(parseFloat(goalProgress), 100)}%`,
+                          backgroundColor:
+                            parseFloat(goalProgress) >= 100
+                              ? "var(--p-color-text-success)"
+                              : "var(--p-color-bg-fill-magic)",
+                          height: "100%",
+                          transition: "width 0.5s",
+                        }}
+                      />
+                    </div>
+                  </BlockStack>
+                )}
               </BlockStack>
             </Card>
 
@@ -299,7 +430,7 @@ export function RevenueSuiteTab({
                       Performance Analytics
                     </Text>
                   </InlineStack>
-                  {shop === "sreeraj-dev-lab.myshopify.com" && (
+                  {isDev && (
                     <Button
                       tone="critical"
                       variant="tertiary"
@@ -385,16 +516,33 @@ export function RevenueSuiteTab({
             {/* EMAIL CONFIG */}
             <Card>
               <BlockStack gap="400">
-                <InlineStack gap="200" blockAlign="center">
-                  {isPro && <Icon source={MagicIcon} tone="magic" />}
-                  <Text as="h2" variant="headingMd">
-                    {isPro
-                      ? "AI Delivery Email Guidelines"
-                      : "Recovery Email Copy"}
-                  </Text>
-                </InlineStack>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  {isPro && (
+                    <InlineStack gap="200" blockAlign="center">
+                      <Icon source={MagicIcon} tone="magic" />
+                      <Text as="h2" variant="headingMd">
+                        {isPro
+                          ? "AI Delivery Email Guidelines"
+                          : "Recovery Email Copy"}
+                      </Text>
+                    </InlineStack>
+                  )}
+                </div>
                 <Divider />
-
+                {isPro && (
+                  <Box
+                    padding="200"
+                    background="bg-surface-secondary"
+                    borderRadius="200"
+                  >
+                    <Text as="p" variant="bodySm" tone="magic">
+                      The AI will automatically append specific cart items and
+                      delivery context to your message.
+                    </Text>
+                  </Box>
+                )}
                 <Select
                   label="Message Template"
                   options={templateOptions}
@@ -408,18 +556,46 @@ export function RevenueSuiteTab({
                   onChange={handleSubjectChange}
                   autoComplete="off"
                 />
-                <TextField
-                  label={isPro ? "Core Message / AI Prompt" : "Email Body"}
-                  value={body}
-                  onChange={handleBodyChange}
-                  multiline={4}
-                  autoComplete="off"
-                  helpText={
-                    isPro
-                      ? "The AI Agent will use this core message, combine it with the customer's specific cart items, and highlight their verified local delivery zone to draft a highly personalized email."
-                      : "This exact text will be sent to the customer if cart recovery is enabled."
-                  }
-                />
+
+                {isPro ? (
+                  <BlockStack gap="200">
+                    <InlineStack align="space-between" blockAlign="center">
+                      <Text as="span" variant="bodyMd">
+                        Core Message / AI Prompt
+                      </Text>
+                      <Button
+                        variant="primary"
+                        tone="success"
+                        icon={MagicIcon}
+                        onClick={handleGeneratePrompt}
+                        loading={isGeneratingPrompt}
+                      >
+                        Generate
+                      </Button>
+                    </InlineStack>
+                    <TextField
+                      label="Core Message / AI Prompt"
+                      labelHidden
+                      value={body}
+                      placeholder={currentPlaceholder}
+                      onChange={handleBodyChange}
+                      multiline={5}
+                      autoComplete="off"
+                      helpText="Leave blank to use the template, or generate a custom message."
+                    />
+                  </BlockStack>
+                ) : (
+                  <TextField
+                    label="Email Body"
+                    value={body}
+                    placeholder={currentPlaceholder}
+                    onChange={handleBodyChange}
+                    multiline={5}
+                    autoComplete="off"
+                    helpText="This exact text will be sent to the customer if cart recovery is enabled."
+                  />
+                )}
+
                 <Button
                   variant="primary"
                   loading={isLocalSaving}
