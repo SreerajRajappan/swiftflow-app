@@ -12,14 +12,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
   const url = new URL(request.url);
 
-  // 1. The Paywall Bypass: Don't block the merchant if they are already on the billing page!
   if (url.pathname !== "/app/billing") {
-    // 2. The Paywall: Require one of our two active plans
     await billing.require({
       plans: [MONTHLY_PLAN_BASIC, MONTHLY_PLAN_PRO],
       isTest: true, // IMPORTANT: Keeps your card from being charged during development
       onFailure: async () => {
-        // 3. The Redirect: Send them to our custom Polaris pricing page
         throw redirect(`/app/billing${url.search}`);
       },
     });

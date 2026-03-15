@@ -68,17 +68,30 @@ export function InsightsTab({
     );
   }
 
-  // Formatting for Claude's tables
-  const tableRows = (recentConversions || []).map((c) => [
-    `…${c.orderId.slice(-8)}`,
-    `$${c.orderValue.toFixed(2)}`,
-    c.source === "delivery_badge"
-      ? "Delivery Badge"
-      : c.source === "cart_recovery"
-        ? "Cart Recovery"
-        : c.source,
-    new Date(c.createdAt).toLocaleDateString(),
-  ]);
+  // 👇 FIX 1: Safe Order ID extraction & Visual Badges
+  const tableRows = (recentConversions || []).map((c) => {
+    const orderIdDisplay = c.orderId ? `#${c.orderId.split("/").pop()}` : "N/A";
+
+    let sourceBadge = <Badge tone="info">{c.source || "Unknown"}</Badge>;
+    if (c.source === "delivery_badge") {
+      sourceBadge = <Badge tone="success">Delivery Badge</Badge>;
+    } else if (c.source === "cart_recovery") {
+      sourceBadge = <Badge tone="magic">Cart Recovery</Badge>;
+    }
+
+    return [
+      <Text key={`id-${c.id}`} as="span" fontWeight="bold">
+        {orderIdDisplay}
+      </Text>,
+      <Text key={`val-${c.id}`} as="span" tone="success" fontWeight="bold">
+        +${(c.orderValue || 0).toFixed(2)}
+      </Text>,
+      <Box key={`src-${c.id}`}>{sourceBadge}</Box>,
+      <Text key={`date-${c.id}`} as="span" tone="subdued">
+        {new Date(c.createdAt).toLocaleDateString()}
+      </Text>,
+    ];
+  });
 
   const badgeProgress =
     stats?.totalRevenue > 0
@@ -91,7 +104,7 @@ export function InsightsTab({
 
   return (
     <BlockStack gap="400">
-      {/* CLAUDE'S KPI ROW */}
+      {/* KPI ROW */}
       <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
         {[
           {
@@ -107,7 +120,9 @@ export function InsightsTab({
           {
             label: "Zone Coverage Rate",
             value: `${(stats?.conversionRate || 0).toFixed(1)}%`,
-            sub: `${stats?.inRadiusCount || 0} of ${stats?.totalChecks || 0} customers`,
+            sub: `${stats?.inRadiusCount || 0} of ${
+              stats?.totalChecks || 0
+            } customers`,
           },
           {
             label: "Email Recovery Rate",
@@ -132,7 +147,7 @@ export function InsightsTab({
       </InlineGrid>
 
       <Layout>
-        {/* CLAUDE'S REVENUE BREAKDOWN */}
+        {/* REVENUE BREAKDOWN */}
         <Layout.Section variant="oneHalf">
           <Card>
             <BlockStack gap="400">
@@ -166,14 +181,15 @@ export function InsightsTab({
                     <Text as="p" variant="bodyMd" fontWeight="semibold">
                       Cart Recovery
                     </Text>
-                    <Badge tone="attention">Recovery</Badge>
+                    <Badge tone="magic">Recovery</Badge>
                   </InlineStack>
                   <Text as="p" variant="headingLg">
                     ${(stats?.recoveryRevenue || 0).toFixed(2)}
                   </Text>
+                  {/* Changed tone from "highlight" to "primary" for better visual contrast */}
                   <ProgressBar
                     progress={recoveryProgress}
-                    tone="highlight"
+                    tone="primary"
                     size="small"
                   />
                   <Text as="p" tone="subdued" variant="bodySm">
@@ -185,7 +201,7 @@ export function InsightsTab({
           </Card>
         </Layout.Section>
 
-        {/* CLAUDE'S RECENT CONVERSIONS */}
+        {/* RECENT CONVERSIONS */}
         <Layout.Section variant="oneHalf">
           <Card>
             <BlockStack gap="400">
@@ -194,7 +210,7 @@ export function InsightsTab({
               </Text>
               {tableRows.length > 0 ? (
                 <DataTable
-                  columnContentTypes={["text", "numeric", "text", "text"]}
+                  columnContentTypes={["text", "text", "text", "text"]}
                   headings={["Order ID", "Value", "Source", "Date"]}
                   rows={tableRows}
                 />
@@ -210,91 +226,96 @@ export function InsightsTab({
           </Card>
         </Layout.Section>
 
-        {/* YOUR ORIGINAL TRENDING PRODUCTS TABLE */}
+        {/* TRENDING PRODUCTS TABLE */}
         <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <InlineStack align="space-between" blockAlign="center">
-                <InlineStack gap="200">
-                  <Icon source={ChartVerticalIcon} tone="base" />
-                  <Text variant="headingMd" as="h2">
-                    Trending Products (Top 5)
-                  </Text>
+          <Box paddingBlockEnd="800">
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <InlineStack gap="200">
+                    <Icon source={ChartVerticalIcon} tone="base" />
+                    <Text variant="headingMd" as="h2">
+                      Trending Products (Top 5)
+                    </Text>
+                  </InlineStack>
+                  <Badge tone="info">Verified Real-Time Data</Badge>
                 </InlineStack>
-                <Badge tone="info">Verified Real-Time Data</Badge>
-              </InlineStack>
-              <Divider />
-              {trendingProducts.length > 0 ? (
-                <IndexTable
-                  resourceName={{ singular: "product", plural: "products" }}
-                  itemCount={trendingProducts.length}
-                  headings={[
-                    { title: "" },
-                    { title: "Product Name" },
-                    { title: "Performance Metrics" },
-                    { title: "Revenue Generated", alignment: "end" },
-                  ]}
-                  selectable={false}
-                >
-                  {trendingProducts.map((product, index) => (
-                    <IndexTable.Row
-                      id={product.productId}
-                      key={index}
-                      position={index}
-                    >
-                      <IndexTable.Cell>
-                        <Box width="40px">
-                          <img
-                            src={
-                              product.image ||
-                              "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-image_large.png"
-                            }
-                            alt={product.title}
-                            style={{
-                              width: "40px",
-                              height: "40px",
-                              objectFit: "cover",
-                              borderRadius: "4px",
-                              border: "1px solid var(--p-color-border-subdued)",
-                            }}
-                          />
-                        </Box>
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <Text as="span" fontWeight="bold">
-                          {product.title}
-                        </Text>
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <InlineStack gap="100">
-                          <Badge tone="info">{`${product._count.productId} views`}</Badge>
-                          {product._count.productId > 10 && (
-                            <Badge tone="critical" progress="complete">
-                              HOT 🔥
-                            </Badge>
-                          )}
-                        </InlineStack>
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <div style={{ textAlign: "right" }}>
-                          <Text as="span" fontWeight="bold" tone="success">
-                            ${product.revenue?.toFixed(2) || "0.00"}
+                <Divider />
+                {trendingProducts.length > 0 ? (
+                  <IndexTable
+                    resourceName={{ singular: "product", plural: "products" }}
+                    itemCount={trendingProducts.length}
+                    headings={[
+                      { title: "" },
+                      { title: "Product Name" },
+                      { title: "Performance Metrics" },
+                      { title: "Revenue Generated", alignment: "end" },
+                    ]}
+                    selectable={false}
+                  >
+                    {trendingProducts.map((product, index) => (
+                      <IndexTable.Row
+                        id={product.productId}
+                        key={index}
+                        position={index}
+                      >
+                        <IndexTable.Cell>
+                          <Box width="40px">
+                            <img
+                              src={
+                                product.image ||
+                                "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-image_large.png"
+                              }
+                              alt={product.title}
+                              style={{
+                                width: "40px",
+                                height: "40px",
+                                objectFit: "cover",
+                                borderRadius: "4px",
+                                border:
+                                  "1px solid var(--p-color-border-subdued)",
+                              }}
+                            />
+                          </Box>
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <Text as="span" fontWeight="bold">
+                            {product.title}
                           </Text>
-                        </div>
-                      </IndexTable.Cell>
-                    </IndexTable.Row>
-                  ))}
-                </IndexTable>
-              ) : (
-                <EmptyState
-                  heading="No trending data yet"
-                  image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-                >
-                  <p>Product performance will appear here automatically.</p>
-                </EmptyState>
-              )}
-            </BlockStack>
-          </Card>
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <InlineStack gap="100">
+                            <Badge tone="info">{`${
+                              product._count?.productId || 0
+                            } views`}</Badge>
+                            {product._count?.productId > 10 && (
+                              <Badge tone="critical" progress="complete">
+                                HOT 🔥
+                              </Badge>
+                            )}
+                          </InlineStack>
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <div style={{ textAlign: "right" }}>
+                            <Text as="span" fontWeight="bold" tone="success">
+                              ${product.revenue?.toFixed(2) || "0.00"}
+                            </Text>
+                          </div>
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
+                ) : (
+                  <EmptyState
+                    heading="No trending data yet"
+                    image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+                  >
+                    <p>Product performance will appear here automatically.</p>
+                  </EmptyState>
+                )}
+              </BlockStack>
+            </Card>
+          </Box>
         </Layout.Section>
       </Layout>
     </BlockStack>

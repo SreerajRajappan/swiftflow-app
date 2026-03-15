@@ -489,6 +489,11 @@ export default function Index() {
   const navigate = useNavigate();
 
   const [selectedTab, setSelectedTab] = useState(0);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const [fontSize, setFontSize] = useState(Number(settings?.fontSize) || 16);
   const [recoveryEmailEnabled, setrecoveryEmailEnabled] = useState(
@@ -511,9 +516,9 @@ export default function Index() {
   const tabs = [
     { id: "revenue", content: "Revenue Suite" },
     { id: "delivery", content: "Delivery" },
-    { id: "personalizer", content: "Personalizer" },
     { id: "leaks", content: "Revenue Leaks" },
     { id: "insights", content: "Insights" },
+    { id: "personalizer", content: "Personalizer" },
   ];
 
   const handleSave = () => {
@@ -649,75 +654,77 @@ export default function Index() {
           </Banner>
         )}
 
-        <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
-          <Box paddingBlockStart="400">
-            {selectedTab === 0 && (
-              <RevenueSuiteTab
-                data={settings}
-                fetcher={deliveryFetcher}
-                totalRevenue={totalRevenue}
-                todayRevenue={todayRevenue}
-                dailyGoal={dailyGoal}
-                goalProgress={goalProgress}
-                isEnabled={isEnabled}
-                setIsEnabled={setIsEnabled}
-                isSaving={isSaving}
-                handleToggle={handleToggle}
-                totalViews={totalViews}
-                conversionRate={conversionRate}
-                recentConversions={recentConversions}
-                shop={shop}
-                onResetData={onResetData}
-                isPro={isPro}
-                navigate={navigate}
-                isDev={isDev}
-              />
-            )}
-            {selectedTab === 1 && (
-              <DeliveryTab
-                isPro={isPro}
-                data={data}
-                fetcher={deliveryFetcher}
-                recoveryEmailEnabled={recoveryEmailEnabled}
-                setrecoveryEmailEnabled={setrecoveryEmailEnabled}
-              />
-            )}
-            {selectedTab === 2 && (
-              <PersonalizerTab
-                isPro={isPro}
-                trialDaysLeft={trialDaysLeft}
-                isSaving={isSaving}
-                customText={customText}
-                setCustomText={setCustomText}
-                buttonText={buttonText}
-                setButtonText={setButtonText}
-                hexColor={hexColor}
-                setHexColor={setHexColor}
-                handleSave={handleSave}
-                navigate={navigate}
-                fontSize={fontSize}
-                setFontSize={setFontSize}
-              />
-            )}
-            {selectedTab === 3 && (
-              <RevenueLeaksTab
-                leaks={activeLeaks}
-                onRunScan={handleRunScan}
-                isScanning={aiFetcher.state === "submitting"}
-                isPro={isPro}
-                navigate={navigate}
-              />
-            )}
-            {selectedTab === 4 && (
-              <InsightsTab
-                isPro={isPro}
-                trendingProducts={trendingProducts}
-                recentConversions={recentConversions}
-                stats={data.advancedStats}
-              />
-            )}
-          </Box>
-        </Tabs>
+        {isMounted && (
+          <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
+            <Box paddingBlockStart="400">
+              {selectedTab === 0 && (
+                <RevenueSuiteTab
+                  data={settings}
+                  fetcher={deliveryFetcher}
+                  totalRevenue={totalRevenue}
+                  todayRevenue={todayRevenue}
+                  dailyGoal={dailyGoal}
+                  goalProgress={goalProgress}
+                  isEnabled={isEnabled}
+                  setIsEnabled={setIsEnabled}
+                  isSaving={isSaving}
+                  handleToggle={handleToggle}
+                  totalViews={totalViews}
+                  conversionRate={conversionRate}
+                  recentConversions={recentConversions}
+                  shop={shop}
+                  onResetData={onResetData}
+                  isPro={isPro}
+                  navigate={navigate}
+                  isDev={isDev}
+                />
+              )}
+              {selectedTab === 1 && (
+                <DeliveryTab
+                  isPro={isPro}
+                  data={data}
+                  fetcher={deliveryFetcher}
+                  recoveryEmailEnabled={recoveryEmailEnabled}
+                  setrecoveryEmailEnabled={setrecoveryEmailEnabled}
+                />
+              )}
+              {selectedTab === 2 && (
+                <RevenueLeaksTab
+                  leaks={activeLeaks}
+                  onRunScan={handleRunScan}
+                  isScanning={aiFetcher.state === "submitting"}
+                  isPro={isPro}
+                  navigate={navigate}
+                />
+              )}
+              {selectedTab === 3 && (
+                <InsightsTab
+                  isPro={isPro}
+                  trendingProducts={trendingProducts}
+                  recentConversions={recentConversions}
+                  stats={data.advancedStats}
+                />
+              )}
+              {selectedTab === 4 && (
+                <PersonalizerTab
+                  isPro={isPro}
+                  trialDaysLeft={trialDaysLeft}
+                  isSaving={isSaving}
+                  customText={customText}
+                  setCustomText={setCustomText}
+                  buttonText={buttonText}
+                  setButtonText={setButtonText}
+                  hexColor={hexColor}
+                  setHexColor={setHexColor}
+                  handleSave={handleSave}
+                  navigate={navigate}
+                  fontSize={fontSize}
+                  setFontSize={setFontSize}
+                />
+              )}
+            </Box>
+          </Tabs>
+        )}
       </BlockStack>
     </Page>
   );

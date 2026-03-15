@@ -8,6 +8,9 @@ import {
   Button,
   RangeSlider,
   Box,
+  Banner, // Added Banner
+  Badge,
+  Divider, // Added Badge
 } from "@shopify/polaris";
 import { EditIcon } from "@shopify/polaris-icons";
 import "../styles/PersonalizerTab.css";
@@ -17,10 +20,8 @@ interface PersonalizerTabProps {
   trialDaysLeft: number;
   customText: string;
   setCustomText: (val: string) => void;
-  // NEW: Added the button text prop
   buttonText: string;
   setButtonText: (val: string) => void;
-  // REMOVED HSB ColorPicker props, swapped for standard hex string
   hexColor: string;
   setHexColor: (val: string) => void;
   fontSize: number;
@@ -48,8 +49,8 @@ export function PersonalizerTab({
   trialDaysLeft,
   customText,
   setCustomText,
-  buttonText, // New prop
-  setButtonText, // New prop
+  buttonText,
+  setButtonText,
   hexColor,
   setHexColor,
   fontSize,
@@ -60,7 +61,17 @@ export function PersonalizerTab({
 }: PersonalizerTabProps) {
   return (
     <BlockStack gap="400">
-      {/* 2. THE SYMMETRICAL GRID */}
+      {/* 🚨 PRO UPGRADE BANNER 🚨 */}
+      {!isPro && (
+        <Banner title="Upgrade to Pro for Custom Branding" tone="info">
+          <p>
+            Basic accounts are locked to the standard Shopify styling. Upgrade
+            to Pro to customize your widget's colors, button text, and font
+            sizes to perfectly match your brand.
+          </p>
+        </Banner>
+      )}
+
       <div className="personalizer-container">
         {/* LEFT COLUMN: Configuration */}
         <div className="personalizer-card">
@@ -107,56 +118,79 @@ export function PersonalizerTab({
                   </InlineStack>
                 </BlockStack>
 
-                {/* NEW: Button Text Field from Claude */}
-                <TextField
-                  label="Button Text"
-                  value={buttonText}
-                  onChange={setButtonText}
-                  placeholder="Check Availability"
-                  autoComplete="off"
-                  helpText="The call-to-action button label."
-                />
+                <Divider />
 
-                <RangeSlider
-                  label={`Font Size: ${fontSize}px`}
-                  value={fontSize}
-                  onChange={setFontSize}
-                  min={12}
-                  max={24}
-                  output
-                />
-
-                {/* UPDATED: Native Color Picker from Claude */}
-                <BlockStack gap="200">
-                  <Text as="p" variant="bodyMd">
-                    Brand Color
-                  </Text>
-                  <InlineStack gap="300" blockAlign="center">
-                    <input
-                      type="color"
-                      value={hexColor}
-                      onChange={(e) => setHexColor(e.target.value)}
-                      style={{
-                        width: "48px",
-                        height: "48px",
-                        border: "1px solid #c9cccf",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        padding: "2px",
-                      }}
-                    />
-                    <Box maxWidth="120px">
-                      <TextField
-                        label=""
-                        labelHidden
-                        value={hexColor}
-                        onChange={setHexColor}
-                        autoComplete="off"
-                        placeholder="#008060"
-                        maxLength={7}
-                      />
-                    </Box>
+                {/* ADVANCED CUSTOMIZATION (LOCKED FOR BASIC) */}
+                <BlockStack gap="400">
+                  <InlineStack align="space-between">
+                    <Text as="h3" variant="headingSm">
+                      Advanced Styling
+                    </Text>
+                    {!isPro && <Badge tone="attention">Pro Feature</Badge>}
                   </InlineStack>
+
+                  <TextField
+                    label="Button Text"
+                    value={buttonText}
+                    onChange={setButtonText}
+                    placeholder="Check Availability"
+                    autoComplete="off"
+                    disabled={!isPro}
+                    helpText={
+                      !isPro
+                        ? "Upgrade to Pro to change button text."
+                        : "The call-to-action button label."
+                    }
+                  />
+
+                  <RangeSlider
+                    label={`Font Size: ${fontSize}px`}
+                    value={fontSize}
+                    onChange={setFontSize}
+                    min={12}
+                    max={24}
+                    output
+                    disabled={!isPro}
+                  />
+
+                  <BlockStack gap="200">
+                    <Text
+                      as="p"
+                      variant="bodyMd"
+                      tone={!isPro ? "subdued" : "base"}
+                    >
+                      Brand Color
+                    </Text>
+                    <InlineStack gap="300" blockAlign="center">
+                      <input
+                        type="color"
+                        value={hexColor}
+                        onChange={(e) => setHexColor(e.target.value)}
+                        disabled={!isPro}
+                        style={{
+                          width: "48px",
+                          height: "48px",
+                          border: "1px solid #c9cccf",
+                          borderRadius: "8px",
+                          cursor: isPro ? "pointer" : "not-allowed",
+                          padding: "2px",
+                          opacity: isPro ? 1 : 0.5,
+                        }}
+                      />
+                      <Box maxWidth="120px">
+                        <TextField
+                          label=""
+                          labelHidden
+                          value={hexColor}
+                          onChange={setHexColor}
+                          autoComplete="off"
+                          placeholder="#008060"
+                          maxLength={7}
+                          disabled={!isPro}
+                        />
+                      </Box>
+                    </InlineStack>
+                  </BlockStack>
                 </BlockStack>
               </BlockStack>
             </BlockStack>
@@ -171,7 +205,6 @@ export function PersonalizerTab({
                 Live Preview
               </Text>
 
-              {/* UPDATED PREVIEW BUBBLE */}
               <div className="preview-area" style={{ padding: "40px 20px" }}>
                 <BlockStack gap="300" align="center" inlineAlign="center">
                   <div

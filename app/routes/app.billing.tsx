@@ -163,13 +163,14 @@ export default function BillingPage() {
                   </BlockStack>
                   <Divider />
                   <BlockStack gap="200">
+                    <FeatureItem text="Everything in Basic" />
                     <FeatureItem text="Unlimited recovered revenue" bold />
                     <FeatureItem text="Autonomous AI Email Generation" bold />
                     <FeatureItem
                       text="A/B Offer Testing & Revenue Leaks"
                       bold
                     />
-                    <FeatureItem text="Everything in Basic" />
+                    <FeatureItem text="Customizable Storefront Badges" bold />
                   </BlockStack>
                 </BlockStack>
               </Box>
@@ -238,11 +239,12 @@ export default function BillingPage() {
                   basic: "Fixed (6 miles)",
                   pro: "Custom (Unlimited)",
                 },
+                // 👇 UPDATED FEATURE ROW 👇
                 {
                   id: "3",
-                  name: "Delivery Availability Badge",
-                  basic: true,
-                  pro: true,
+                  name: "Storefront Widget Design",
+                  basic: "Standard",
+                  pro: "Fully Customizable",
                 },
                 {
                   id: "4",

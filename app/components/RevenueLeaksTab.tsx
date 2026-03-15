@@ -77,13 +77,22 @@ export function RevenueLeaksTab({
   }
 
   const tableRows = leaks.map((leak) => {
-    const tone: "critical" | "warning" | "info" | "success" | "new" =
-      leak.severity === "CRITICAL"
-        ? "critical"
-        : leak.severity === "WARNING"
-          ? "warning"
-          : "info";
+    const value = leak.potentialValue || 0;
 
+    // 👇 Dynamic Severity Calculation based on Cart Value 👇
+    let severityLabel = "LOW";
+    let severityTone: "critical" | "warning" | "info" | "success" | "new" =
+      "info";
+
+    if (value >= 100) {
+      severityLabel = "CRITICAL";
+      severityTone = "critical"; // Deep Red
+    } else if (value >= 50) {
+      severityLabel = "HIGH";
+      severityTone = "warning"; // Orange / Yellow
+    }
+
+    // Determine Agent Status Badge
     let statusBadge = (
       <Badge key={`status-${leak.id}`} tone="new">
         Detected
@@ -97,7 +106,6 @@ export function RevenueLeaksTab({
         </Badge>
       );
     }
-    // The AI finished its job, but the customer hasn't bought yet
     if (leak.status === "COMPLETED") {
       statusBadge = (
         <Badge key={`status-${leak.id}`} tone="info" icon={CheckCircleIcon}>
@@ -105,7 +113,6 @@ export function RevenueLeaksTab({
         </Badge>
       );
     }
-    // The customer actually paid!
     if (leak.status === "RECOVERED") {
       statusBadge = (
         <Badge key={`status-${leak.id}`} tone="success" icon={CheckCircleIcon}>
@@ -115,10 +122,13 @@ export function RevenueLeaksTab({
     }
 
     return [
-      <InlineStack key={`details-${leak.id}`} align="start">
-        <div style={{ width: "40px", flexShrink: 0 }}>
-          {leak.severity === "CRITICAL" && (
+      <InlineStack key={`details-${leak.id}`} align="start" gap="200">
+        <div style={{ width: "24px", flexShrink: 0, marginTop: "2px" }}>
+          {severityLabel === "CRITICAL" && (
             <Icon source={AlertDiamondIcon} tone="critical" />
+          )}
+          {severityLabel === "HIGH" && (
+            <Icon source={AlertDiamondIcon} tone="warning" />
           )}
         </div>
         <BlockStack>
@@ -130,19 +140,28 @@ export function RevenueLeaksTab({
           </Text>
           {leak.metadata?.distanceMiles && (
             <InlineStack gap="100" align="center">
-              <Badge tone="info" />
               📍 {Number(leak.metadata.distanceMiles).toFixed(1)} miles away
             </InlineStack>
           )}
         </BlockStack>
       </InlineStack>,
-      <Badge key={`sev-${leak.id}`} tone={tone}>
-        {leak.severity}
+
+      <Badge key={`sev-${leak.id}`} tone={severityTone}>
+        {severityLabel}
       </Badge>,
-      <Text key={`val-${leak.id}`} as="span" variant="bodyMd" fontWeight="bold">
-        ${(leak.potentialValue || 0).toFixed(2)}
+
+      <Text
+        key={`val-${leak.id}`}
+        as="span"
+        variant="bodyMd"
+        fontWeight="bold"
+        tone={severityTone === "critical" ? "critical" : undefined}
+      >
+        ${value.toFixed(2)}
       </Text>,
+
       statusBadge,
+
       new Date(leak.createdAt).toLocaleDateString(),
     ];
   });
