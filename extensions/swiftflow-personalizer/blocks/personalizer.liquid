@@ -15,7 +15,8 @@
   (function() {
     async function loadSwiftFlow() {
       try {
-        const response = await fetch('/apps/swiftflow-revenue?product_id={{ product.id }}');
+        // Unified Proxy URL
+        const response = await fetch(`/apps/swiftflow/api/proxy?product_id={{ product.id }}`);
         if (!response.ok) return;
         
         const data = await response.json();
@@ -42,12 +43,14 @@
       const productForms = document.querySelectorAll('form[action*="/cart/add"]');
 
       productForms.forEach(form => {
-        // Create a hidden field inside the form
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = 'properties[Personalization]';
-        hiddenInput.className = 'sf-hidden-personalization';
-        form.appendChild(hiddenInput);
+        // Create a hidden field inside the form ONLY if it doesn't already exist
+        if (!form.querySelector('.sf-hidden-personalization')) {
+          const hiddenInput = document.createElement('input');
+          hiddenInput.type = 'hidden';
+          hiddenInput.name = 'properties[Personalization]';
+          hiddenInput.className = 'sf-hidden-personalization';
+          form.appendChild(hiddenInput);
+        }
       });
 
       // Every time the customer types, copy the text to the hidden fields
@@ -65,10 +68,15 @@
       setTimeout(attachToCartForm, 500); 
     }
 
+    // Ensures the script runs correctly inside the Shopify Theme Editor
     if (window.Shopify && window.Shopify.designMode) {
       init();
     } else {
-      document.addEventListener('DOMContentLoaded', init);
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init(); // Catch case where script loads after DOMContentLoaded
+      }
     }
   })();
 </script>

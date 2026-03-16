@@ -1,84 +1,57 @@
 <div id="sf-visitor-count" style="padding: 10px; border-radius: 5px; margin: 10px 0;">
-  <span id="sf-count-text" style="color: {{ section.settings.text_color }}; font-size: {{ section.settings.font_size }}px; font-weight: bold;">
+  <span id="sf-count-text" style="color: {{ block.settings.text_color }}; font-size: {{ block.settings.font_size }}px; font-weight: bold;">
     🔥 Checking live visitors...
   </span>
 </div>
 
 <script>
-  async function fetchVisitors() {
-    try {
-      // 1. Get the current Product ID from Liquid
-      const productId = "gid://shopify/Product/{{ product.id }}";
+  document.addEventListener('DOMContentLoaded', async function() {
+    {% if request.page_type == 'product' %}
+      const productId = "{{ product.id }}";
+      const productTitle = "{{ product.title | escape }}";
+      const shopDomain = Shopify.shop;
       
-      // 2. Call your ACTUAL proxy subpath with the product_id param
-      // This hits your app.proxy.tsx loader to record the view in the database
-      const proxyUrl = `/apps/swiftflow-revenue/app/proxy?product_id=${encodeURIComponent(productId)}`;
-      
-      const response = await fetch(proxyUrl);
-      const data = await response.json();
-      
-      console.log("SwiftFlow Proxy Response:", data);
-      
-      // 3. Update the UI
-      // We use the real viewCount from your database but add a small 'boost' for social proof
-      const displayCount = (data.viewCount || 0) + Math.floor(Math.random() * 5) + 1;
-      const messageText = "{{ section.settings.message }}";
-      
-      document.getElementById('sf-count-text').innerText = `🔥 ${displayCount} ${messageText}`;
-      
-    } catch (e) {
-      console.error("SwiftFlow Error:", e);
-      // Fallback if proxy fails
-      document.getElementById('sf-count-text').innerText = `🔥 Someone is looking at this right now!`;
-    }
-  }
+      try {
+        const hasViewed = sessionStorage.getItem(`viewed_${productId}`);
+        
+        // Unified Proxy URL. Make sure your Partner Dashboard Proxy is set to 'apps/swiftflow'
+        const proxyUrl = `/apps/swiftflow/api/track-view`; 
+        
+        // Single POST request that tracks the view AND returns the current count
+        const response = await fetch(proxyUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            productId: productId,
+            productTitle: productTitle,
+            shopDomain: shopDomain,
+            isNewView: !hasViewed // Tells backend whether to increment the view count
+          })
+        });
 
-  // Only run on product pages
-  {% if request.page_type == 'product' %}
-    fetchVisitors();
-  {% endif %}
-</script>
-
-{% if request.page_type == 'product' %}
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    // Inject Liquid variables into the script
-    const productId = "{{ product.id }}";
-    const productTitle = "{{ product.title | escape }}";
-    const shopDomain = Shopify.shop;
-
-    // Prevent duplicate logging for the same session
-    if (!sessionStorage.getItem(`viewed_${productId}`)) {
-      
-      // The fetch URL must match the App Proxy prefix configured in your Partner Dashboard 
-      // e.g., if your prefix is 'apps/swiftflow', use that here.
-      fetch('/apps/swiftflow/api/track-view', { 
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          productId: productId,
-          productTitle: productTitle,
-          shopDomain: shopDomain
-        })
-      })
-      .then(response => {
         if (response.ok) {
           sessionStorage.setItem(`viewed_${productId}`, 'true');
-          console.log('SwiftFlow: Product view tracked.');
+          const data = await response.json();
+          
+          // Add a small 'boost' for social proof
+          const displayCount = (data.viewCount || 0) + Math.floor(Math.random() * 5) + 1;
+          const messageText = "{{ block.settings.message }}";
+          
+          document.getElementById('sf-count-text').innerText = `🔥 ${displayCount} ${messageText}`;
         }
-      })
-      .catch(error => console.error('SwiftFlow Tracking Error:', error));
-    }
+      } catch (e) {
+        console.error("SwiftFlow Visitor Error:", e);
+        // Fallback if proxy fails so the UI doesn't look broken
+        document.getElementById('sf-count-text').innerText = `🔥 Someone is looking at this right now!`;
+      }
+    {% endif %}
   });
 </script>
-{% endif %}
 
 {% schema %}
 {
   "name": "SF: Live Visitor Count",
-  "target": "body",
+  "target": "section",
   "settings": [
     { "type": "text", "id": "message", "label": "Widget Text", "default": "people are looking at this right now!" },
     { "type": "color", "id": "text_color", "label": "Text Color", "default": "#ff4500" },

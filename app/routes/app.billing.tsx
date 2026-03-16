@@ -17,9 +17,10 @@ import {
 } from "@shopify/polaris";
 import {
   CheckCircleIcon,
-  StarIcon,
+  MagicIcon,
   CashDollarIcon,
   LocationIcon,
+  StarFilledIcon,
 } from "@shopify/polaris-icons";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
@@ -141,42 +142,57 @@ export default function BillingPage() {
         )}
 
         {/* MONTHLY / ANNUAL TOGGLE */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            marginBottom: "10px",
-          }}
-        >
-          <ButtonGroup variant="segmented">
-            <Button pressed={!isAnnual} onClick={() => setIsAnnual(false)}>
-              Monthly
-            </Button>
-            <Button pressed={isAnnual} onClick={() => setIsAnnual(true)}>
-              Yearly (Save 20%)
-            </Button>
-          </ButtonGroup>
-        </div>
+        <Box paddingBlockEnd="400">
+          <InlineStack align="center" blockAlign="center">
+            <ButtonGroup variant="segmented">
+              <Button pressed={!isAnnual} onClick={() => setIsAnnual(false)}>
+                Monthly
+              </Button>
+              <Button pressed={isAnnual} onClick={() => setIsAnnual(true)}>
+                {/* @ts-expect-error: Polaris types children as strings, but React safely renders this DOM at runtime */}
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  <span>Yearly</span>
+                  <span
+                    style={{
+                      backgroundColor: "var(--p-color-bg-surface-success)",
+                      color: "var(--p-color-text-success)",
+                      padding: "2px 6px",
+                      borderRadius: "100px",
+                      fontSize: "11px",
+                      fontWeight: "bold",
+                      lineHeight: "1",
+                      border: "1px solid var(--p-color-border-success-subdued)",
+                    }}
+                  >
+                    Save 20%
+                  </span>
+                </div>
+              </Button>
+            </ButtonGroup>
+          </InlineStack>
+        </Box>
 
         <Layout>
           {/* BASIC PLAN */}
           <Layout.Section variant="oneThird">
             <Card>
-              <Box minHeight="420px">
+              <Box minHeight="320px">
                 <BlockStack gap="400">
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      height: "32px",
-                    }}
-                  >
-                    <Icon source={LocationIcon} tone="base" />
+                  <InlineStack gap={"200"}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Icon source={LocationIcon} tone="base" />
+                    </div>
                     <Text as="h2" variant="headingMd">
                       Basic Recovery
                     </Text>
-                  </div>
+                  </InlineStack>
                   <BlockStack gap="100">
                     <Text as="h1" variant="headingLg">
                       ${isAnnual ? "279.00" : "29.00"}{" "}
@@ -215,21 +231,21 @@ export default function BillingPage() {
           {/* PRO PLAN */}
           <Layout.Section variant="oneThird">
             <Card background="bg-surface-secondary">
-              <Box minHeight="420px">
+              <Box minHeight="320px">
                 <BlockStack gap="400">
                   <InlineStack align="space-between" blockAlign="center">
                     <div
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: "8px",
-                        height: "32px",
                       }}
                     >
-                      <Icon source={StarIcon} tone="warning" />
-                      <Text as="h2" variant="headingMd">
-                        Pro Suite
-                      </Text>
+                      <InlineStack gap="200" align="center">
+                        <Icon source={MagicIcon} tone="magic" />
+                        <Text as="h2" variant="headingMd">
+                          Pro Suite
+                        </Text>
+                      </InlineStack>
                     </div>
                     <Badge tone="success">POPULAR</Badge>
                   </InlineStack>
@@ -281,22 +297,16 @@ export default function BillingPage() {
           {/* ELITE PLAN */}
           <Layout.Section variant="oneThird">
             <Card>
-              <Box minHeight="420px">
+              <Box minHeight="320px">
                 <BlockStack gap="400">
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      height: "32px",
-                    }}
-                  >
-                    {/* 👇 FIX: Replaced SparklesIcon with StarIcon but colored base 👇 */}
-                    <Icon source={StarIcon} tone="base" />
+                  <InlineStack gap="200" blockAlign="center">
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <Icon source={StarFilledIcon} tone="warning" />
+                    </div>
                     <Text as="h2" variant="headingMd">
                       Elite Enterprise
                     </Text>
-                  </div>
+                  </InlineStack>
                   <BlockStack gap="100">
                     <Text as="h1" variant="headingLg">
                       ${isAnnual ? "949.00" : "99.00"}{" "}
@@ -333,17 +343,17 @@ export default function BillingPage() {
           </Layout.Section>
         </Layout>
 
-        {/* 👇 FIX: Added CashDollarIcon usage back here 👇 */}
         <Box paddingBlockStart="200">
           <InlineStack align="center" gap="200" blockAlign="center">
-            <Icon source={CashDollarIcon} tone="base" />
+            <div style={{ display: "flex" }}>
+              <Icon source={CashDollarIcon} tone="base" />
+            </div>
             <Text as="span" tone="subdued" variant="bodySm">
               Secure payments processed natively by Shopify. Cancel anytime.
             </Text>
           </InlineStack>
         </Box>
 
-        {/* 👇 FIX: Restored the Comparison Table & Added Elite Column 👇 */}
         <Layout.Section>
           <Card padding="0">
             <Box padding="400">
