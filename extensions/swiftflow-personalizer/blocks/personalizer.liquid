@@ -15,8 +15,8 @@
   (function() {
     async function loadSwiftFlow() {
       try {
-        // Unified Proxy URL
-        const response = await fetch(`/apps/swiftflow/api/proxy?product_id={{ product.id }}`);
+        // Unified Proxy URL matching the TOML subpath
+        const response = await fetch(`/apps/swiftflow-revenue/proxy?product_id={{ product.id }}`);
         if (!response.ok) return;
         
         const data = await response.json();

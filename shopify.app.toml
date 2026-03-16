@@ -31,7 +31,7 @@ redirect_urls = [
 ]
 
 [app_proxy]
-url = "https://swiftflow-app.fly.dev/api/proxy"
+url = "https://swiftflow-app.fly.dev/api"
 subpath = "swiftflow-revenue"
 prefix = "apps"
 

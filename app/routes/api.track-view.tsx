@@ -1,32 +1,42 @@
 import { type ActionFunctionArgs, json } from "@remix-run/node";
-import db from "../db.server"; // Adjust import to your Prisma client location
+import db from "../db.server";
+import { authenticate } from "../shopify.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  // Security check: ensure it's a POST request
   if (request.method !== "POST") {
     return json({ error: "Method not allowed" }, { status: 405 });
   }
 
   try {
+    // 🚨 SECURE THE ROUTE: Verify Shopify's cryptographic signature
+    const { session } = await authenticate.public.appProxy(request);
+
+    if (!session) {
+      console.error("❌ App Proxy: Auth failed (No session)");
+      return json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const shop = session.shop; // Safely extracted from Shopify's encrypted signature
     const payload = await request.json();
-    const { productId, productTitle, shopDomain } = payload;
+    const { productId, productTitle, isNewView } = payload;
 
-    // Optional but recommended: Validate the signature Shopify sends in the headers
-    // to ensure the request actually came from a Shopify storefront.
+    if (isNewView) {
+      await db.productView.create({
+        data: {
+          productId: String(productId),
+          productTitle: productTitle,
+          shop: shop,
+        },
+      });
+    }
 
-    // Write to your database
-    await db.productView.create({
-      data: {
-        productId: String(productId),
-        productTitle: productTitle,
-        shop: shopDomain,
-        // Map any other fields your Prisma schema requires here
-      },
+    const viewCount = await db.productView.count({
+      where: { shop, productId: String(productId) },
     });
 
-    return json({ success: true }, { status: 200 });
+    return json({ success: true, viewCount }, { status: 200 });
   } catch (error) {
-    console.error("Failed to track view:", error);
+    console.error("❌ Failed to track view:", error);
     return json({ error: "Internal Server Error" }, { status: 500 });
   }
 };

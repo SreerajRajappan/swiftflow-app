@@ -14,8 +14,8 @@
       try {
         const hasViewed = sessionStorage.getItem(`viewed_${productId}`);
         
-        // Unified Proxy URL. Make sure your Partner Dashboard Proxy is set to 'apps/swiftflow'
-        const proxyUrl = `/apps/swiftflow/api/track-view`; 
+        // Unified Proxy URL matching the TOML subpath
+        const proxyUrl = `/apps/swiftflow-revenue/track-view`;
         
         // Single POST request that tracks the view AND returns the current count
         const response = await fetch(proxyUrl, {
