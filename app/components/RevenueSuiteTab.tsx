@@ -14,6 +14,7 @@ import {
   Divider,
   InlineGrid,
   Select,
+  Banner,
 } from "@shopify/polaris";
 import {
   ProductIcon,
@@ -22,6 +23,8 @@ import {
   ViewIcon,
   MagicIcon,
 } from "@shopify/polaris-icons";
+import { ZoneHealthCard } from "./ZoneHealthCard";
+import type { ZoneHealth } from "~/services/zone-health.server";
 
 interface RevenueSuiteProps {
   data: any;
@@ -42,6 +45,7 @@ interface RevenueSuiteProps {
   isPro: boolean;
   navigate: (path: string) => void;
   isDev: boolean;
+  zoneHealth: ZoneHealth;
 }
 
 const TEMPLATES = {
@@ -86,6 +90,7 @@ export function RevenueSuiteTab({
   isPro,
   navigate,
   isDev,
+  zoneHealth,
 }: RevenueSuiteProps) {
   const [localDailyGoal, setLocalDailyGoal] = useState(
     dailyGoal?.toString() || "500",
@@ -233,6 +238,7 @@ export function RevenueSuiteTab({
         <Layout.Section>
           <BlockStack gap="400">
             {/* AI AGENT STATUS CARD */}
+            {/* AI AGENT STATUS CARD */}
             {isPro ? (
               <Card>
                 <BlockStack gap="400">
@@ -286,7 +292,7 @@ export function RevenueSuiteTab({
                 </BlockStack>
               </Card>
             ) : (
-              <Card>
+              <Card background="bg-surface-secondary">
                 <BlockStack gap="400">
                   <InlineStack align="space-between" blockAlign="center">
                     <InlineStack gap="200" blockAlign="center">
@@ -298,18 +304,36 @@ export function RevenueSuiteTab({
                     <Badge tone="attention">Pro Feature</Badge>
                   </InlineStack>
                   <Divider />
+
+                  {/* 👇 THE ZERO-BUDGET UPSELL TRIGGER 👇 */}
+                  {totalViews > 0 && totalRevenue === 0 ? (
+                    <Banner tone="warning">
+                      <Text as="p" variant="bodyMd">
+                        Based on your{" "}
+                        <strong>
+                          {totalViews.toLocaleString()} recent local visitors
+                        </strong>
+                        , you are leaving an estimated{" "}
+                        <strong>${(totalViews * 0.03 * 45).toFixed(0)}</strong>{" "}
+                        on the table this month from abandoned carts.
+                      </Text>
+                    </Banner>
+                  ) : null}
+
                   <Box>
                     <Text as="p" variant="bodyMd" tone="subdued">
-                      Upgrade to Pro to unlock our autonomous AI agent that
+                      Upgrade to Pro to unlock our autonomous AI agent. It
                       verifies customer locations against your delivery radius
-                      and generates hyper-personalized recovery emails.
+                      and generates hyper-personalized, highly-converting
+                      recovery emails while you sleep.
                     </Text>
                   </Box>
                   <Button
                     onClick={() => navigate("/app/billing")}
                     variant="primary"
+                    tone="success"
                   >
-                    Upgrade to Pro
+                    Upgrade to Pro & Capture Lost Revenue
                   </Button>
                 </BlockStack>
               </Card>
@@ -513,6 +537,8 @@ export function RevenueSuiteTab({
         {/* RIGHT COLUMN */}
         <Layout.Section variant="oneThird">
           <BlockStack gap="400">
+            {/* ZONE HEALTH */}
+            <ZoneHealthCard health={zoneHealth} />
             {/* EMAIL CONFIG */}
             <Card>
               <BlockStack gap="400">

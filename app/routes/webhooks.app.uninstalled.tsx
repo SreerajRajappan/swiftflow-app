@@ -19,17 +19,24 @@ export async function action({ request }: ActionFunctionArgs) {
       return json({ error: "Invalid webhook" }, { status: 400 });
     }
 
-    // Clean up ALL shop data in the safest dependency order
+    // 🚨 CRITICAL FIX: The Billing Exploit Patch
+    // We delete volatile data to save DB space, but we NEVER delete ConversionEvents
+    // or CartRecovery records. If they reinstall, their $1k/$5k limits remain enforced!
     await db.$transaction([
-      db.revenueLeak.deleteMany({ where: { shop } }), // <-- NEW: Clean up the Agent's memory
-      db.deliveryCheck.deleteMany({ where: { shop } }),
-      db.conversionEvent.deleteMany({ where: { shop } }),
-      db.cartRecovery.deleteMany({ where: { shop } }),
-      db.productView.deleteMany({ where: { shop } }),
-      db.appSettings.deleteMany({ where: { shop } }), // Deleted last
+      db.revenueLeak.deleteMany({ where: { shop } }), // Clean up active Agent tasks
+      db.deliveryCheck.deleteMany({ where: { shop } }), // Clear map pings
+      db.productView.deleteMany({ where: { shop } }), // Clear storefront views
     ]);
 
-    console.log(`✅ Cleaned up all data securely for shop: ${shop}`);
+    // Disable the suite so the cron job stops processing them
+    await db.appSettings.updateMany({
+      where: { shop },
+      data: { revenueSuiteEnabled: false },
+    });
+
+    console.log(
+      `✅ Cleaned up volatile data securely for shop: ${shop}. Billing history preserved.`,
+    );
     return json({ success: true });
   } catch (error) {
     console.error("Uninstall webhook error:", error);

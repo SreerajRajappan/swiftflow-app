@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import confetti from "canvas-confetti";
+import OpenAI from "openai";
 import {
   json,
   useLoaderData,
@@ -19,7 +20,8 @@ import {
   ELITE_PLANS,
 } from "../constants";
 import { RevenueSuiteTab } from "../components/RevenueSuiteTab";
-import OpenAI from "openai";
+import { OnboardingChecklist } from "../components/OnboardingChecklist";
+import { calculateZoneHealth } from "../services/zone-health.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
@@ -65,17 +67,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  const todaysConversions = await prisma.conversionEvent.findMany({
+  // Push all calculation to the database engine
+  const todaysConversions = await prisma.conversionEvent.aggregate({
     where: {
       shop,
       createdAt: { gte: startOfToday },
     },
+    _sum: { orderValue: true },
   });
 
-  const todayRevenue = todaysConversions.reduce(
-    (sum, conv) => sum + conv.orderValue,
-    0,
-  );
+  const todayRevenue = todaysConversions._sum.orderValue || 0;
 
   // 3. Calculate Monthly Revenue (For Billing Enforcement)
   const startOfMonth = new Date();
@@ -105,6 +106,53 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 5,
   });
 
+  // Calculate the Onboarding Steps
+  const themeEditorUrl = `https://admin.shopify.com/store/${shop.split(".")[0]}/themes/current/editor`;
+
+  const onboardingSteps = [
+    {
+      id: "location",
+      title: "Confirm your store location",
+      description: "We use this to anchor your local delivery geofence.",
+      done: !!(settings?.storeLat && settings?.storeLng),
+      href: "/app/delivery",
+      cta: "Set location",
+    },
+    {
+      id: "radius",
+      title: "Set your delivery radius",
+      description: "Define exactly how far you are willing to deliver.",
+      done: settings?.hasCustomizedRadius ?? false,
+      href: "/app/delivery",
+      cta: "Set radius",
+    },
+    {
+      id: "badge",
+      title: "Activate Storefront Widgets",
+      description:
+        "Turn on the Delivery Badge and Live Visitor Count in your Shopify Theme Editor.",
+      done: totalViews > 0, // If we have views, the widget is active!
+      href: themeEditorUrl,
+      cta: "Open Theme Editor",
+      isExternal: true, // Opens in a new tab
+    },
+    {
+      id: "suite",
+      title: "Enable Revenue Suite",
+      description:
+        "Flip the master switch below to start tracking local abandoned carts.",
+      done: settings?.revenueSuiteEnabled ?? false,
+      href: "#", // They are already on the page
+      cta: "Scroll down to enable",
+    },
+  ];
+
+  const zoneHealth = calculateZoneHealth(
+    settings,
+    totalViews,
+    parseFloat(conversionRate),
+  );
+
   return json({
     settings,
     shop,
@@ -121,6 +169,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     isBasic,
     isPro,
     isElite,
+    onboardingSteps,
+    zoneHealth,
     isDev: process.env.NODE_ENV === "development",
   });
 };
@@ -343,6 +393,7 @@ export default function Index() {
         ) : null}
 
         <Box paddingBlockStart={shouldAddPadding ? "200" : "0"}>
+          <OnboardingChecklist steps={data.onboardingSteps} />
           <RevenueSuiteTab
             data={data.settings}
             fetcher={fetcher}
@@ -362,6 +413,7 @@ export default function Index() {
             isPro={data.isPro || data.isElite} // Both Pro and Elite unlock Pro features in the UI
             navigate={navigate}
             isDev={data.isDev}
+            zoneHealth={data.zoneHealth}
           />
         </Box>
       </BlockStack>

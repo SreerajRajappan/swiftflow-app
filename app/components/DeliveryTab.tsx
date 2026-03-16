@@ -38,9 +38,9 @@ export default function DeliveryTab({
   const circleRef = useRef<any>(null);
 
   useEffect(() => {
-    if (data?.deliveryRadius) setRadius(data.deliveryRadius);
+    if (data?.settings?.deliveryRadius) setRadius(data.settings.deliveryRadius);
     if (data?.unitSystem) setUnitSystem(data.unitSystem);
-  }, [data?.deliveryRadius, data?.unitSystem]);
+  }, [data?.settings?.deliveryRadius, data?.unitSystem]);
 
   const radiusInMeters =
     unitSystem === "IMPERIAL" ? radius * 1609.34 : radius * 1000;
@@ -59,7 +59,7 @@ export default function DeliveryTab({
 
     async function initMap() {
       try {
-        // 👇 FIX 2: Bulletproof Google Maps Script Loader
+        // Bulletproof Google Maps Script Loader
         if (!(window as any).google?.maps?.Map) {
           await new Promise<void>((resolve, reject) => {
             const existing = document.querySelector("script[data-gmaps]");
@@ -106,7 +106,7 @@ export default function DeliveryTab({
           position: center,
           map: mapInstanceRef.current,
           title: "Your Store",
-          animation: (window as any).google.maps.Animation.DROP, // Adds a nice drop-in animation
+          animation: (window as any).google.maps.Animation.DROP,
         });
 
         // Initialize Circle
@@ -130,8 +130,21 @@ export default function DeliveryTab({
 
     initMap();
 
+    // Robust Cleanup Function to Prevent Memory Leaks
     return () => {
-      isMounted = false; // Prevent memory leaks if component unmounts
+      isMounted = false;
+
+      if (circleRef.current) {
+        circleRef.current.setMap(null);
+        circleRef.current = null;
+      }
+
+      if (mapInstanceRef.current && (window as any).google?.maps?.event) {
+        (window as any).google.maps.event.clearInstanceListeners(
+          mapInstanceRef.current,
+        );
+        mapInstanceRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -163,10 +176,6 @@ export default function DeliveryTab({
   const isSaving =
     fetcher.state === "submitting" &&
     fetcher.formData?.get("intent") === "save-delivery";
-  const saved =
-    fetcher.data?.intent === "save-delivery" && fetcher.data?.success;
-  const hasError =
-    fetcher.data?.intent === "save-delivery" && fetcher.data?.error;
 
   return (
     <Box paddingBlockEnd="800">
@@ -180,18 +189,6 @@ export default function DeliveryTab({
                 map will use a default location until coordinates are confirmed.
               </p>
             </Banner>
-          </Layout.Section>
-        )}
-
-        {saved && (
-          <Layout.Section>
-            <Banner title="Delivery zone saved successfully!" tone="success" />
-          </Layout.Section>
-        )}
-
-        {hasError && (
-          <Layout.Section>
-            <Banner title={String(fetcher.data.error)} tone="critical" />
           </Layout.Section>
         )}
 
@@ -272,7 +269,7 @@ export default function DeliveryTab({
                   fullWidth
                   disabled={!isPro}
                 >
-                  Save Custom Zone
+                  Save Delivery Zone
                 </Button>
               </BlockStack>
             </Box>

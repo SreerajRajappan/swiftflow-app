@@ -5,28 +5,31 @@ import { estimateDeliveryTime } from "./services/proximity.server";
 import { sendRecoveryEmail } from "./services/email.server";
 import { BASIC_PLANS, PRO_PLANS, ELITE_PLANS } from "./constants";
 
-const openai = new OpenAI(); // Automatically uses process.env.OPENAI_API_KEY
+const openai = new OpenAI();
 
-/**
- * Retrieves the current active plan level for the shop via Shopify Billing API.
- */
+// 👇 AI SAFETY: Sanitize user & merchant inputs against prompt injection
+function sanitizeForPrompt(input: string, maxLength = 300): string {
+  if (!input) return "";
+  return input
+    .replace(/[<>{}[\]\\]/g, "") // Strip code-injection chars
+    .replace(/ignore previous|system prompt|jailbreak/gi, "") // Stop basic LLM jailbreaks
+    .trim()
+    .slice(0, maxLength);
+}
+
+// 👇 AI SAFETY: Safe fallback if the LLM hallucinates red flags
+function generateFallbackEmail(shopName: string, productNames: string) {
+  return `You left some great items in your cart! The good news is you are well within our local delivery zone for ${shopName}. Complete your order today and we'll bring your ${productNames} right to your door.`;
+}
+
 async function getShopPlanLevel(shop: string) {
   try {
     const { admin } = await shopify.unauthenticated.admin(shop);
     const response = await admin.graphql(`
-      query {
-        currentAppInstallation {
-          activeSubscriptions {
-            name
-            status
-          }
-        }
-      }
+      query { currentAppInstallation { activeSubscriptions { name status } } }
     `);
     const { data } = await response.json();
     const subs = data?.currentAppInstallation?.activeSubscriptions || [];
-
-    // Find the currently active subscription
     const activeSub = subs.find((sub: any) => sub.status === "ACTIVE");
     const activePlanName = activeSub?.name || "";
 
@@ -36,8 +39,7 @@ async function getShopPlanLevel(shop: string) {
       isElite: ELITE_PLANS.includes(activePlanName),
     };
   } catch (err) {
-    console.error(`[Billing Check] Failed to check plan for ${shop}`, err);
-    // 🚨 Default to Basic if API fails to prevent free Pro/Elite access
+    console.error(`[Billing Check] Failed for ${shop}`, err);
     return { isBasic: true, isPro: false, isElite: false };
   }
 }
@@ -46,27 +48,18 @@ export async function runCartRecoveryAgent(shop?: string) {
   console.log("🤖 [AI Agent] Waking up to write and dispatch emails...");
 
   try {
-    const whereClause: any = {
-      agentStatus: "ANALYZING", // Ready for an email
-    };
-
+    const whereClause: any = { agentStatus: "ANALYZING" };
     if (shop) whereClause.shop = shop;
 
-    // 1. Find all carts that are waiting for the Agent
     const pendingCarts = await db.cartRecovery.findMany({
       where: whereClause,
       take: 10,
     });
 
-    if (pendingCarts.length === 0) {
-      console.log("🤖 [AI Agent] No pending carts found. Going back to sleep.");
-      return;
-    }
-
-    console.log(`🤖 [AI Agent] Found ${pendingCarts.length} carts to process.`);
+    if (pendingCarts.length === 0) return;
 
     for (const cart of pendingCarts) {
-      // 🚨 TIERED BILLING ENFORCEMENT CHECK 🚨
+      // -- Billing Limits Check --
       const startOfMonth = new Date();
       startOfMonth.setDate(1);
       startOfMonth.setHours(0, 0, 0, 0);
@@ -77,14 +70,9 @@ export async function runCartRecoveryAgent(shop?: string) {
       });
 
       const totalMonthlyRevenue = currentMonthRevenue._sum.orderValue || 0;
-
       const planLevel = await getShopPlanLevel(cart.shop);
 
-      // Enforce Basic Limit ($1,000)
       if (planLevel.isBasic && totalMonthlyRevenue >= 1000) {
-        console.log(
-          `[Billing] ${cart.shop} exceeded $1,000 Basic limit (Current: $${totalMonthlyRevenue}). Skipping cart ${cart.cartToken}.`,
-        );
         await db.cartRecovery.update({
           where: { id: cart.id },
           data: { agentStatus: "LIMIT_REACHED" },
@@ -92,11 +80,7 @@ export async function runCartRecoveryAgent(shop?: string) {
         continue;
       }
 
-      // Enforce Pro Limit ($5,000)
       if (planLevel.isPro && totalMonthlyRevenue >= 5000) {
-        console.log(
-          `[Billing] ${cart.shop} exceeded $5,000 Pro limit (Current: $${totalMonthlyRevenue}). Skipping cart ${cart.cartToken}.`,
-        );
         await db.cartRecovery.update({
           where: { id: cart.id },
           data: { agentStatus: "LIMIT_REACHED" },
@@ -104,7 +88,14 @@ export async function runCartRecoveryAgent(shop?: string) {
         continue;
       }
 
-      // If Elite, or under limits for Basic/Pro, proceed with the agent!
+      // -- Atomic Lock --
+      const lock = await db.cartRecovery.updateMany({
+        where: { id: cart.id, agentStatus: "ANALYZING" },
+        data: { agentStatus: "PROCESSING" },
+      });
+
+      if (lock.count === 0) continue;
+
       const leaks = await db.revenueLeak.findMany({
         where: { shop: cart.shop },
         orderBy: { createdAt: "desc" },
@@ -114,12 +105,6 @@ export async function runCartRecoveryAgent(shop?: string) {
         (l) => (l.metadata as any)?.cartToken === cart.cartToken,
       );
 
-      // 2. Lock the cart immediately
-      await db.cartRecovery.update({
-        where: { id: cart.id },
-        data: { agentStatus: "PROCESSING" },
-      });
-
       if (currentLeak) {
         await db.revenueLeak.update({
           where: { id: currentLeak.id },
@@ -127,13 +112,8 @@ export async function runCartRecoveryAgent(shop?: string) {
         });
       }
 
-      // 👇 CRITICAL FIX: Wrapped the rest in a try/catch to prevent Zombie Carts
       try {
-        // 3. Validate we have an email address to send to
         if (!cart.customerEmail) {
-          console.log(
-            `⚠️ [AI Agent] Skipping cart ${cart.cartToken} - No email found.`,
-          );
           await db.cartRecovery.update({
             where: { id: cart.id },
             data: { agentStatus: "SKIPPED" },
@@ -141,31 +121,34 @@ export async function runCartRecoveryAgent(shop?: string) {
           continue;
         }
 
-        // 4. Get the shop's global settings
         const settings = await db.appSettings.findUnique({
           where: { shop: cart.shop },
         });
 
         if (!settings) continue;
 
-        // 5. Extract product names
+        // 👇 Sanitize Inputs
         const items = cart.lineItems as any[];
-        const productNames =
+        const rawProductNames =
           items?.map((item) => item.title).join(", ") || "your selected items";
+        const safeProductNames = sanitizeForPrompt(rawProductNames, 150);
+        const safeMerchantMessage = sanitizeForPrompt(
+          settings.recoveryEmailBody || "",
+          300,
+        );
 
-        // 6. Inject A/B Testing Context
         let abContext = "";
+        let safeAbMessage = "";
         if (settings.abTestEnabled) {
-          const abMessage =
+          safeAbMessage = sanitizeForPrompt(
             cart.abTestVariant === "A"
               ? settings.abTestMessageA
-              : settings.abTestMessageB;
-          abContext = `5. Include this specific A/B test offer seamlessly into the text: "${abMessage}"`;
-        } else {
-          abContext = "5. Do not invent any discounts or special offers.";
+              : settings.abTestMessageB,
+            200,
+          );
+          abContext = `- Required promotional phrase to include: "${safeAbMessage}"`;
         }
 
-        // Extract Distance and Calculate ETA
         const distanceMiles = (currentLeak?.metadata as any)?.distanceMiles;
         let distanceContext = "They live in our local delivery zone.";
         let etaContext = "";
@@ -175,99 +158,112 @@ export async function runCartRecoveryAgent(shop?: string) {
           etaContext = `Estimated delivery time for their address is ${estimateDeliveryTime(distanceMiles)}.`;
         }
 
-        // 7. Generate the Hyper-Local AI Content
-        const prompt = `
-          You are an expert e-commerce copywriter for a local store named ${cart.shop}. 
-          A customer just abandoned their cart containing: ${productNames}.
-          
-          MERCHANT'S CORE MESSAGE / STYLE GUIDE:
-          "${settings.recoveryEmailBody}"
+        // 👇 Split into strict System Rules and User Context
+        const SYSTEM_PROMPT = `You are an expert e-commerce copywriter for a LOCAL delivery business.
+        STRICT RULES:
+        1. Write exactly 2 short paragraphs. No more, no less.
+        2. NEVER invent specific delivery times, prices, discount codes, or product details.
+        3. NEVER use the words "urgent", "last chance", or high-pressure sales language.
+        4. Tone: warm, helpful, neighborhood-friendly.
+        5. NO subject line. Just the email body.
+        6. Max 100 words total.`;
 
-          CRITICAL CONTEXT:
-          - ${distanceContext}
-          - ${etaContext}
-
-          Write a warm, highly-converting email to encourage them to complete their $${cart.cartValue} order.
-          
-          RULES:
-          1. Base your writing style and main message strictly on the "Core Message" provided by the merchant above.
-          2. Seamlessly mention the specific items they left behind.
-          3. Emphasize how close they are to the store to highlight fast local delivery.
-          4. If an estimated delivery time is provided above, explicitly mention it (e.g., "We can have this to your door in [ETA]").
-          ${abContext}
-          6. Keep it concise (under 3 paragraphs).
-          7. No subject line. Just the email body.
+        const USER_PROMPT = `
+        Write a cart recovery email for this abandoned checkout:
+        - Store Name: ${cart.shop}
+        - Abandoned Products: ${safeProductNames}
+        - Logistics Context: ${distanceContext} ${etaContext}
+        - Merchant's Core Message: "${safeMerchantMessage}"
+        ${abContext}
         `;
 
         const response = await openai.chat.completions.create({
           model: "gpt-4o-mini",
-          messages: [{ role: "user", content: prompt }],
-          temperature: 0.7,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: USER_PROMPT },
+          ],
+          max_tokens: 250, // Hard ceiling
+          temperature: 0.6, // Lowered for less hallucination
         });
 
-        const generatedEmailBody =
-          response.choices[0]?.message?.content?.trim();
+        let generatedEmailBody =
+          response.choices[0]?.message?.content?.trim() || "";
 
-        if (generatedEmailBody) {
-          const cartUrl = `https://${cart.shop}/cart`;
-          const subjectLine =
-            settings.recoveryEmailSubject ||
-            "We're headed your way! Finish your order?";
+        // 👇 AI Output Validation (Red Flag Detection)
+        const redFlags = [
+          "$",
+          "free shipping",
+          "discount code",
+          "promo",
+          "% off",
+        ];
+        const merchantMessageLower = safeMerchantMessage.toLowerCase();
+        const abMessageLower = safeAbMessage.toLowerCase();
 
-          const finalEmailHtml = `
-            <p>${generatedEmailBody.replace(/\n/g, "<br/>")}</p>
-            <br/>
-            <p>Resume your order here: <a href="${cartUrl}">${cartUrl}</a></p>
-          `;
+        // Check if the AI invented a discount that the merchant didn't explicitly authorize
+        const hasHallucinatedDiscount = redFlags.some(
+          (flag) =>
+            generatedEmailBody.toLowerCase().includes(flag) &&
+            !merchantMessageLower.includes(flag) &&
+            !abMessageLower.includes(flag),
+        );
 
-          const finalEmailText = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
-
-          // 👇 CRITICAL FIX: Pass the merchant's store domain as the Reply-To
-          const merchantReplyTo = `info@${cart.shop.replace(".myshopify.com", ".com")}`;
-
-          // 8. DISPATCH: Send the actual email via the utility
-          const sendSuccess = await sendRecoveryEmail(
-            cart.shop,
-            cart.customerEmail,
-            subjectLine,
-            finalEmailHtml,
-            finalEmailText,
-            merchantReplyTo, // Ensuring merchants get replies from their customers
+        if (
+          hasHallucinatedDiscount ||
+          generatedEmailBody.length < 20 ||
+          generatedEmailBody.length > 1200
+        ) {
+          console.warn(
+            `🚨 [AI Agent] Hallucination detected for cart ${cart.cartToken}. Using safe fallback template.`,
           );
+          generatedEmailBody = generateFallbackEmail(
+            cart.shop,
+            safeProductNames,
+          );
+        }
 
-          if (sendSuccess) {
-            // 9. UPDATE: Mark as sent and record the AI's work
-            await db.cartRecovery.update({
-              where: { id: cart.id },
-              data: {
-                agentStatus: "COMPLETED",
-                generatedEmail: finalEmailText,
-                emailSent: true,
-                emailSentAt: new Date(),
-              },
-            });
+        const cartUrl = `https://${cart.shop}/cart`;
+        const subjectLine =
+          settings.recoveryEmailSubject ||
+          "We're headed your way! Finish your order?";
 
-            if (currentLeak) {
-              await db.revenueLeak.update({
-                where: { id: currentLeak.id },
-                data: { status: "COMPLETED" },
-              });
-            }
-          } else {
-            // Send failed
-            await db.cartRecovery.update({
-              where: { id: cart.id },
-              data: { agentStatus: "FAILED" },
+        const finalEmailHtml = `
+          <p>${generatedEmailBody.replace(/\n/g, "<br/>")}</p>
+          <br/>
+          <p>Resume your order here: <a href="${cartUrl}">${cartUrl}</a></p>
+        `;
+
+        const finalEmailText = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
+        const merchantReplyTo = `info@${cart.shop.replace(".myshopify.com", ".com")}`;
+
+        const sendSuccess = await sendRecoveryEmail(
+          cart.shop,
+          cart.customerEmail,
+          subjectLine,
+          finalEmailHtml,
+          finalEmailText,
+          merchantReplyTo,
+        );
+
+        if (sendSuccess) {
+          await db.cartRecovery.update({
+            where: { id: cart.id },
+            data: {
+              agentStatus: "COMPLETED",
+              generatedEmail: finalEmailText,
+              emailSent: true,
+              emailSentAt: new Date(),
+            },
+          });
+
+          if (currentLeak) {
+            await db.revenueLeak.update({
+              where: { id: currentLeak.id },
+              data: { status: "COMPLETED" },
             });
-            if (currentLeak) {
-              await db.revenueLeak.update({
-                where: { id: currentLeak.id },
-                data: { status: "FAILED" },
-              });
-            }
           }
         } else {
-          // AI generation failed
           await db.cartRecovery.update({
             where: { id: cart.id },
             data: { agentStatus: "FAILED" },
@@ -280,17 +276,14 @@ export async function runCartRecoveryAgent(shop?: string) {
           }
         }
       } catch (agentError) {
-        // 👇 CRITICAL FIX: Catch any errors (like OpenAI timeouts) and unlock the cart!
         console.error(
           `🚨 [AI Agent] Error generating/sending for cart ${cart.cartToken}:`,
           agentError,
         );
-
         await db.cartRecovery.update({
           where: { id: cart.id },
           data: { agentStatus: "FAILED" },
         });
-
         if (currentLeak) {
           await db.revenueLeak.update({
             where: { id: currentLeak.id },
