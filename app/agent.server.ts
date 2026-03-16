@@ -105,8 +105,6 @@ export async function runCartRecoveryAgent(shop?: string) {
       }
 
       // If Elite, or under limits for Basic/Pro, proceed with the agent!
-
-      // --- FIX: Prevent Memory Leak by taking only the 50 most recent leaks ---
       const leaks = await db.revenueLeak.findMany({
         where: { shop: cart.shop },
         orderBy: { createdAt: "desc" },
@@ -129,137 +127,176 @@ export async function runCartRecoveryAgent(shop?: string) {
         });
       }
 
-      // 3. Validate we have an email address to send to
-      if (!cart.customerEmail) {
-        console.log(
-          `⚠️ [AI Agent] Skipping cart ${cart.cartToken} - No email found.`,
-        );
-        await db.cartRecovery.update({
-          where: { id: cart.id },
-          data: { agentStatus: "SKIPPED" },
-        });
-        continue;
-      }
-
-      // 4. Get the shop's global settings
-      const settings = await db.appSettings.findUnique({
-        where: { shop: cart.shop },
-      });
-
-      if (!settings) continue;
-
-      // 5. Extract product names
-      const items = cart.lineItems as any[];
-      const productNames =
-        items?.map((item) => item.title).join(", ") || "your selected items";
-
-      // 6. Inject A/B Testing Context
-      let abContext = "";
-      if (settings.abTestEnabled) {
-        const abMessage =
-          cart.abTestVariant === "A"
-            ? settings.abTestMessageA
-            : settings.abTestMessageB;
-        abContext = `5. Include this specific A/B test offer seamlessly into the text: "${abMessage}"`;
-      } else {
-        abContext = "5. Do not invent any discounts or special offers.";
-      }
-
-      // Extract Distance and Calculate ETA
-      const distanceMiles = (currentLeak?.metadata as any)?.distanceMiles;
-      let distanceContext = "They live in our local delivery zone.";
-      let etaContext = "";
-
-      if (distanceMiles) {
-        distanceContext = `They are exactly ${distanceMiles.toFixed(1)} miles away from our store.`;
-        etaContext = `Estimated delivery time for their address is ${estimateDeliveryTime(distanceMiles)}.`;
-      }
-
-      // 7. Generate the Hyper-Local AI Content
-      const prompt = `
-        You are an expert e-commerce copywriter for a local store named ${cart.shop}. 
-        A customer just abandoned their cart containing: ${productNames}.
-        
-        MERCHANT'S CORE MESSAGE / STYLE GUIDE:
-        "${settings.recoveryEmailBody}"
-
-        CRITICAL CONTEXT:
-        - ${distanceContext}
-        - ${etaContext}
-
-        Write a warm, highly-converting email to encourage them to complete their $${cart.cartValue} order.
-        
-        RULES:
-        1. Base your writing style and main message strictly on the "Core Message" provided by the merchant above.
-        2. Seamlessly mention the specific items they left behind.
-        3. Emphasize how close they are to the store to highlight fast local delivery.
-        4. If an estimated delivery time is provided above, explicitly mention it (e.g., "We can have this to your door in [ETA]").
-        ${abContext}
-        6. Keep it concise (under 3 paragraphs).
-        7. No subject line. Just the email body.
-      `;
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-      });
-
-      const generatedEmailBody = response.choices[0]?.message?.content?.trim();
-
-      if (generatedEmailBody) {
-        const cartUrl = `https://${cart.shop}/cart`;
-        const subjectLine =
-          settings.recoveryEmailSubject ||
-          "We're headed your way! Finish your order?";
-
-        const finalEmailHtml = `
-          <p>${generatedEmailBody.replace(/\n/g, "<br/>")}</p>
-          <br/>
-          <p>Resume your order here: <a href="${cartUrl}">${cartUrl}</a></p>
-        `;
-
-        const finalEmailText = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
-
-        // 8. DISPATCH: Send the actual email via the utility
-        const sendSuccess = await sendRecoveryEmail(
-          cart.shop,
-          cart.customerEmail,
-          subjectLine,
-          finalEmailHtml,
-          finalEmailText,
-        );
-
-        if (sendSuccess) {
-          // 9. UPDATE: Mark as sent and record the AI's work
+      // 👇 CRITICAL FIX: Wrapped the rest in a try/catch to prevent Zombie Carts
+      try {
+        // 3. Validate we have an email address to send to
+        if (!cart.customerEmail) {
+          console.log(
+            `⚠️ [AI Agent] Skipping cart ${cart.cartToken} - No email found.`,
+          );
           await db.cartRecovery.update({
             where: { id: cart.id },
-            data: {
-              agentStatus: "COMPLETED",
-              generatedEmail: finalEmailText,
-              emailSent: true,
-              emailSentAt: new Date(),
-            },
+            data: { agentStatus: "SKIPPED" },
           });
+          continue;
+        }
 
-          if (currentLeak) {
-            await db.revenueLeak.update({
-              where: { id: currentLeak.id },
-              data: { status: "COMPLETED" },
+        // 4. Get the shop's global settings
+        const settings = await db.appSettings.findUnique({
+          where: { shop: cart.shop },
+        });
+
+        if (!settings) continue;
+
+        // 5. Extract product names
+        const items = cart.lineItems as any[];
+        const productNames =
+          items?.map((item) => item.title).join(", ") || "your selected items";
+
+        // 6. Inject A/B Testing Context
+        let abContext = "";
+        if (settings.abTestEnabled) {
+          const abMessage =
+            cart.abTestVariant === "A"
+              ? settings.abTestMessageA
+              : settings.abTestMessageB;
+          abContext = `5. Include this specific A/B test offer seamlessly into the text: "${abMessage}"`;
+        } else {
+          abContext = "5. Do not invent any discounts or special offers.";
+        }
+
+        // Extract Distance and Calculate ETA
+        const distanceMiles = (currentLeak?.metadata as any)?.distanceMiles;
+        let distanceContext = "They live in our local delivery zone.";
+        let etaContext = "";
+
+        if (distanceMiles) {
+          distanceContext = `They are exactly ${distanceMiles.toFixed(1)} miles away from our store.`;
+          etaContext = `Estimated delivery time for their address is ${estimateDeliveryTime(distanceMiles)}.`;
+        }
+
+        // 7. Generate the Hyper-Local AI Content
+        const prompt = `
+          You are an expert e-commerce copywriter for a local store named ${cart.shop}. 
+          A customer just abandoned their cart containing: ${productNames}.
+          
+          MERCHANT'S CORE MESSAGE / STYLE GUIDE:
+          "${settings.recoveryEmailBody}"
+
+          CRITICAL CONTEXT:
+          - ${distanceContext}
+          - ${etaContext}
+
+          Write a warm, highly-converting email to encourage them to complete their $${cart.cartValue} order.
+          
+          RULES:
+          1. Base your writing style and main message strictly on the "Core Message" provided by the merchant above.
+          2. Seamlessly mention the specific items they left behind.
+          3. Emphasize how close they are to the store to highlight fast local delivery.
+          4. If an estimated delivery time is provided above, explicitly mention it (e.g., "We can have this to your door in [ETA]").
+          ${abContext}
+          6. Keep it concise (under 3 paragraphs).
+          7. No subject line. Just the email body.
+        `;
+
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.7,
+        });
+
+        const generatedEmailBody =
+          response.choices[0]?.message?.content?.trim();
+
+        if (generatedEmailBody) {
+          const cartUrl = `https://${cart.shop}/cart`;
+          const subjectLine =
+            settings.recoveryEmailSubject ||
+            "We're headed your way! Finish your order?";
+
+          const finalEmailHtml = `
+            <p>${generatedEmailBody.replace(/\n/g, "<br/>")}</p>
+            <br/>
+            <p>Resume your order here: <a href="${cartUrl}">${cartUrl}</a></p>
+          `;
+
+          const finalEmailText = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
+
+          // 👇 CRITICAL FIX: Pass the merchant's store domain as the Reply-To
+          const merchantReplyTo = `info@${cart.shop.replace(".myshopify.com", ".com")}`;
+
+          // 8. DISPATCH: Send the actual email via the utility
+          const sendSuccess = await sendRecoveryEmail(
+            cart.shop,
+            cart.customerEmail,
+            subjectLine,
+            finalEmailHtml,
+            finalEmailText,
+            merchantReplyTo, // Ensuring merchants get replies from their customers
+          );
+
+          if (sendSuccess) {
+            // 9. UPDATE: Mark as sent and record the AI's work
+            await db.cartRecovery.update({
+              where: { id: cart.id },
+              data: {
+                agentStatus: "COMPLETED",
+                generatedEmail: finalEmailText,
+                emailSent: true,
+                emailSentAt: new Date(),
+              },
             });
+
+            if (currentLeak) {
+              await db.revenueLeak.update({
+                where: { id: currentLeak.id },
+                data: { status: "COMPLETED" },
+              });
+            }
+          } else {
+            // Send failed
+            await db.cartRecovery.update({
+              where: { id: cart.id },
+              data: { agentStatus: "FAILED" },
+            });
+            if (currentLeak) {
+              await db.revenueLeak.update({
+                where: { id: currentLeak.id },
+                data: { status: "FAILED" },
+              });
+            }
           }
         } else {
-          // Send failed
+          // AI generation failed
           await db.cartRecovery.update({
             where: { id: cart.id },
             data: { agentStatus: "FAILED" },
           });
+          if (currentLeak) {
+            await db.revenueLeak.update({
+              where: { id: currentLeak.id },
+              data: { status: "FAILED" },
+            });
+          }
         }
-      } else {
+      } catch (agentError) {
+        // 👇 CRITICAL FIX: Catch any errors (like OpenAI timeouts) and unlock the cart!
+        console.error(
+          `🚨 [AI Agent] Error generating/sending for cart ${cart.cartToken}:`,
+          agentError,
+        );
+
         await db.cartRecovery.update({
           where: { id: cart.id },
           data: { agentStatus: "FAILED" },
         });
+
+        if (currentLeak) {
+          await db.revenueLeak.update({
+            where: { id: currentLeak.id },
+            data: { status: "FAILED" },
+          });
+        }
       }
     }
   } catch (error) {

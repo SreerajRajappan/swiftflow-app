@@ -34,17 +34,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return json({ success: true, message: "No active shops." });
     }
 
-    // 👇 3b. Loop through every shop and run the agent
+    // 👇 3b. Loop through every shop SAFELY and SEQUENTIALLY
     for (const { shop } of activeShops) {
       console.log(`\n🔄 Processing Shop: ${shop}`);
-
-      const promises = activeShops.map(async ({ shop }) => {
+      try {
         await processAbandonedCarts(shop);
-        // Don't await the agent here if possible, or run them in parallel
-        return runCartRecoveryAgent(shop);
-      });
-
-      await Promise.all(promises);
+        await runCartRecoveryAgent(shop);
+      } catch (shopError) {
+        console.error(`❌ Failed processing shop ${shop}:`, shopError);
+        // Continue to the next shop even if one fails
+      }
     }
 
     return json(
