@@ -8,9 +8,9 @@ import {
   Button,
   RangeSlider,
   Box,
-  Banner, // Added Banner
+  Banner,
   Badge,
-  Divider, // Added Badge
+  Divider,
 } from "@shopify/polaris";
 import { EditIcon } from "@shopify/polaris-icons";
 import "../styles/PersonalizerTab.css";
@@ -21,7 +21,7 @@ interface PersonalizerTabProps {
   customText: string;
   setCustomText: (val: string) => void;
   buttonText: string;
-  setButtonText: (val: string) => void;
+  // setButtonText: (val: string) => void;
   hexColor: string;
   setHexColor: (val: string) => void;
   fontSize: number;
@@ -50,7 +50,7 @@ export function PersonalizerTab({
   customText,
   setCustomText,
   buttonText,
-  setButtonText,
+  // setButtonText,
   hexColor,
   setHexColor,
   fontSize,
@@ -129,7 +129,7 @@ export function PersonalizerTab({
                     {!isPro && <Badge tone="attention">Pro Feature</Badge>}
                   </InlineStack>
 
-                  <TextField
+                  {/* <TextField
                     label="Button Text"
                     value={buttonText}
                     onChange={setButtonText}
@@ -141,7 +141,7 @@ export function PersonalizerTab({
                         ? "Upgrade to Pro to change button text."
                         : "The call-to-action button label."
                     }
-                  />
+                  /> */}
 
                   <RangeSlider
                     label={`Font Size: ${fontSize}px`}
@@ -219,7 +219,7 @@ export function PersonalizerTab({
                     {customText || "📍 Local Delivery Available"}
                   </div>
 
-                  <button
+                  {/* <button
                     style={{
                       backgroundColor: hexColor,
                       color: "#fff",
@@ -243,7 +243,7 @@ export function PersonalizerTab({
                     }
                   >
                     {buttonText || "Check Availability"}
-                  </button>
+                  </button> */}
                 </BlockStack>
               </div>
 
