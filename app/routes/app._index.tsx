@@ -153,6 +153,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     parseFloat(conversionRate),
   );
 
+  // --- VIRAL GROWTH ENGINE LOGIC ---
+  let shouldShowReviewNudge = false;
+
+  // Only ask for a review if they have actually recovered money (the "Aha!" moment)
+  if (!settings?.hasLeftReview && totalRevenue > 0) {
+    if (!settings?.reviewDismissedAt) {
+      shouldShowReviewNudge = true;
+    } else {
+      // If they dismissed it, wait 7 days before asking again
+      const daysSinceDismissed =
+        (new Date().getTime() -
+          new Date(settings.reviewDismissedAt).getTime()) /
+        (1000 * 3600 * 24);
+      if (daysSinceDismissed > 7) {
+        shouldShowReviewNudge = true;
+      }
+    }
+  }
+
   return json({
     settings,
     shop,
@@ -172,6 +191,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     onboardingSteps,
     zoneHealth,
     isDev: process.env.NODE_ENV === "development",
+    shouldShowReviewNudge,
+    hasLeftReview: settings?.hasLeftReview,
+    referralCode: settings?.referralCode,
+    referralCount: settings?.referralCount,
+    onboardingDismissed: settings?.onboardingDismissed ?? false,
   });
 };
 
@@ -266,6 +290,47 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         { status: 500 },
       );
     }
+  }
+
+  if (intent === "dismiss-review") {
+    await prisma.appSettings.update({
+      where: { shop },
+      data: { reviewDismissedAt: new Date() },
+    });
+    return json({ success: true, message: "We'll remind you later." });
+  }
+
+  if (intent === "completed-review") {
+    await prisma.appSettings.update({
+      where: { shop },
+      data: { hasLeftReview: true },
+    });
+    return json({
+      success: true,
+      message: "Thank you so much for your support! 🎉",
+    });
+  }
+
+  if (intent === "generate-referral") {
+    // Generate a simple 6-character alphanumeric code based on the shop name
+    const rawCode =
+      shop.split(".")[0].substring(0, 3) +
+      Math.random().toString(36).substring(2, 5);
+    const code = rawCode.toUpperCase();
+
+    await prisma.appSettings.update({
+      where: { shop },
+      data: { referralCode: code },
+    });
+    return json({ success: true, message: "Referral code generated!" });
+  }
+
+  if (intent === "dismiss-onboarding") {
+    await prisma.appSettings.update({
+      where: { shop },
+      data: { onboardingDismissed: true },
+    });
+    return json({ success: true, message: "Checklist dismissed." });
   }
 
   return json({ error: "Unknown intent" }, { status: 400 });
@@ -393,7 +458,14 @@ export default function Index() {
         ) : null}
 
         <Box paddingBlockStart={shouldAddPadding ? "200" : "0"}>
-          <OnboardingChecklist steps={data.onboardingSteps} />
+          {/* Automatically hide if dismissed OR if all steps are complete */}
+          {!data.onboardingDismissed &&
+            !data.onboardingSteps.every((step) => step.done) && (
+              <OnboardingChecklist
+                steps={data.onboardingSteps}
+                fetcher={fetcher}
+              />
+            )}
           <RevenueSuiteTab
             data={data.settings}
             fetcher={fetcher}

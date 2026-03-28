@@ -46,6 +46,9 @@ interface RevenueSuiteProps {
   navigate: (path: string) => void;
   isDev: boolean;
   zoneHealth: ZoneHealth;
+  shouldShowReviewNudge?: boolean;
+  referralCode?: string;
+  referralCount?: number;
 }
 
 const TEMPLATES = {
@@ -91,6 +94,9 @@ export function RevenueSuiteTab({
   navigate,
   isDev,
   zoneHealth,
+  shouldShowReviewNudge,
+  referralCode,
+  referralCount,
 }: RevenueSuiteProps) {
   const [localDailyGoal, setLocalDailyGoal] = useState(
     dailyGoal?.toString() || "500",
@@ -235,6 +241,38 @@ export function RevenueSuiteTab({
   return (
     <Box paddingBlockEnd="800">
       <Layout>
+        {/* --- SMART REVIEW NUDGE --- */}
+        {shouldShowReviewNudge && (
+          <Box paddingBlockEnd="400">
+            <Banner
+              title="You're recovering revenue! 🎉"
+              tone="success"
+              onDismiss={() => {
+                const form = new FormData();
+                form.append("intent", "dismiss-review");
+                fetcher.submit(form, { method: "post" });
+              }}
+              action={{
+                content: "Leave a Review",
+                // Replace with your actual Shopify App Store review link once approved
+                url: `https://apps.shopify.com/swiftflow-local-delivery/reviews/new`,
+                onAction: () => {
+                  const form = new FormData();
+                  form.append("intent", "completed-review");
+                  fetcher.submit(form, { method: "post" });
+                },
+              }}
+            >
+              <Text as="p">
+                We noticed SwiftFlow has successfully recovered{" "}
+                <strong>${totalRevenue.toFixed(2)}</strong> for your store! If
+                our app is helping your local business grow, it would mean the
+                world to us if you left a 5-star review on the Shopify App
+                Store.
+              </Text>
+            </Banner>
+          </Box>
+        )}
         <Layout.Section>
           <BlockStack gap="400">
             {/* AI AGENT STATUS CARD */}
@@ -705,6 +743,72 @@ export function RevenueSuiteTab({
                 )}
               </BlockStack>
             </Card>
+            {/* --- LOCAL REFERRAL ENGINE --- */}
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <Text as="h2" variant="headingMd">
+                    Refer a Local Merchant
+                  </Text>
+                  <Badge tone="success">Give $50, Get $50</Badge>
+                </InlineStack>
+                <Divider />
+
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Know another local business (like a bakery or florist) that
+                  could use SwiftFlow? Share your unique link. When they upgrade
+                  to Pro, you both get a $50 credit applied to your Shopify
+                  bill.
+                </Text>
+
+                {referralCode ? (
+                  <BlockStack gap="200">
+                    <TextField
+                      label="Your Unique Referral Link"
+                      value={`https://swiftflow.logiclooms.io/join?ref=${referralCode}`}
+                      autoComplete="off"
+                      readOnly
+                      selectTextOnFocus
+                      connectedRight={
+                        <Button
+                          onClick={() => {
+                            navigator.clipboard.writeText(
+                              `https://swiftflow.logiclooms.io/join?ref=${referralCode}`,
+                            );
+                            shopify?.toast?.show("Link copied to clipboard!");
+                          }}
+                        >
+                          Copy
+                        </Button>
+                      }
+                    />
+                    <InlineStack align="space-between">
+                      <Text as="span" variant="bodySm">
+                        Successful Referrals:
+                      </Text>
+                      <Text as="span" variant="bodySm" fontWeight="bold">
+                        {referralCount}
+                      </Text>
+                    </InlineStack>
+                  </BlockStack>
+                ) : (
+                  <Button
+                    variant="primary"
+                    loading={
+                      fetcher.state === "submitting" &&
+                      fetcher.formData?.get("intent") === "generate-referral"
+                    }
+                    onClick={() => {
+                      const form = new FormData();
+                      form.append("intent", "generate-referral");
+                      fetcher.submit(form, { method: "post" });
+                    }}
+                  >
+                    Generate My Referral Link
+                  </Button>
+                )}
+              </BlockStack>
+            </Card>
           </BlockStack>
         </Layout.Section>
       </Layout>
@@ -721,7 +825,10 @@ function StatBox({ label, value, icon, tone, color }: any) {
       width="220px"
     >
       <BlockStack gap="200" align="center">
-        <Icon source={icon} tone={tone} />
+        {/* Wrap the icon in a Box with a defined width to prevent the jump */}
+        <Box width="20px" minHeight="20px">
+          <Icon source={icon} tone={tone} />
+        </Box>
         <Text as="p" variant="bodySm" alignment="center" tone="subdued">
           {label}
         </Text>

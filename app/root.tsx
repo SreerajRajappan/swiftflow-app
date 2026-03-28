@@ -10,6 +10,8 @@ import type { LinksFunction } from "@remix-run/node";
 import { AppProvider } from "@shopify/polaris";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 
+import "./app.css";
+
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: polarisStyles },
 ];

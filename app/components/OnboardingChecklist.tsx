@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Card,
   BlockStack,
@@ -22,16 +21,26 @@ export interface Step {
   isExternal?: boolean;
 }
 
-export function OnboardingChecklist({ steps }: { steps: Step[] }) {
+export function OnboardingChecklist({
+  steps,
+  fetcher,
+}: {
+  steps: Step[];
+  fetcher: any;
+}) {
   const navigate = useNavigate();
-  // State to handle manual dismissal
-  const [isDismissed, setIsDismissed] = useState(false);
-
   const completedCount = steps.filter((s) => s.done).length;
-  const allDone = completedCount === steps.length;
 
-  // If the merchant clicked Dismiss, hide the component
-  if (isDismissed) return null;
+  const handleDismiss = () => {
+    const form = new FormData();
+    form.append("intent", "dismiss-onboarding");
+    fetcher.submit(form, { method: "post" });
+  };
+
+  // Optimistic UI: Hide instantly when the button is clicked before the server responds
+  if (fetcher.formData?.get("intent") === "dismiss-onboarding") {
+    return null;
+  }
 
   return (
     <Box paddingBlockEnd="400">
@@ -42,22 +51,24 @@ export function OnboardingChecklist({ steps }: { steps: Step[] }) {
               🚀 Setup SwiftFlow ({completedCount}/{steps.length} complete)
             </Text>
             <InlineStack gap="300" blockAlign="center">
-              <Badge tone={allDone ? "success" : "attention"}>
+              <Badge tone="attention">
                 {completedCount === 0
                   ? "Not started"
                   : `${completedCount} done`}
               </Badge>
-              {/* Show the dismiss button when all steps are completed */}
-              {allDone && (
-                <Button
-                  size="slim"
-                  variant="primary"
-                  tone="success"
-                  onClick={() => setIsDismissed(true)}
-                >
-                  Dismiss Checklist
-                </Button>
-              )}
+              {/* Dismiss button is now ALWAYS visible */}
+              <Button
+                size="slim"
+                variant="primary"
+                tone="critical"
+                onClick={handleDismiss}
+                loading={
+                  fetcher.state === "submitting" &&
+                  fetcher.formData?.get("intent") === "dismiss-onboarding"
+                }
+              >
+                Dismiss Checklist
+              </Button>
             </InlineStack>
           </InlineStack>
 

@@ -1,0 +1,11 @@
+/* Prevent SVG massive flickering during hydration */
+svg {
+  max-width: 20px;
+  max-height: 20px;
+}
+
+/* Allow Polaris to override this once loaded */
+.Polaris-Icon svg {
+  max-width: none;
+  max-height: none;
+}
