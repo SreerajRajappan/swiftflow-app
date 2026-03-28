@@ -1,6 +1,6 @@
 # Production Configuration for SwiftFlow
 client_id = "0d40a8f7944ea05b2170a6853a984afb"
-name = "SwiftFlow: Local Cart Recovery"
+name = "SwiftFlow: Local Delivery"
 application_url = "https://swiftflow.logiclooms.io"
 embedded = true
 
