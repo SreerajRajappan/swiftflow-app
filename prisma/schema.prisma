@@ -65,6 +65,8 @@ model AppSettings {
   
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+
+  uninstalledAt        DateTime?
   
   @@index([shop])
 }
@@ -154,4 +156,14 @@ model RevenueLeak {
 
   @@index([shop, status])
   @@index([shop, type])
+}
+
+model GeoCache {
+  id        String   @id @default(cuid())
+  address   String   @unique
+  lat       Float
+  lng       Float
+  createdAt DateTime @default(now())
+  
+  @@index([address])
 }

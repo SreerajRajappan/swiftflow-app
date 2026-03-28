@@ -276,7 +276,6 @@ export function RevenueSuiteTab({
         <Layout.Section>
           <BlockStack gap="400">
             {/* AI AGENT STATUS CARD */}
-            {/* AI AGENT STATUS CARD */}
             {isPro ? (
               <Card>
                 <BlockStack gap="400">
@@ -458,29 +457,34 @@ export function RevenueSuiteTab({
             </Card>
 
             {/* MASTER TOGGLE */}
-            <Card>
-              <BlockStack gap="400">
-                <InlineStack align="space-between">
-                  <InlineStack gap="200">
-                    <Icon source={ProductIcon} tone="base" />
-                    <Text as="h2" variant="headingMd">
-                      Revenue Suite Master Control
-                    </Text>
+            {/* 👈 MOVED THE ID HERE SO IT SCROLLS DIRECTLY TO THIS CARD */}
+            <div id="revenue-suite-section" style={{ scrollMarginTop: "24px" }}>
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between">
+                    <InlineStack gap="200">
+                      <Icon source={ProductIcon} tone="base" />
+                      <Text as="h2" variant="headingMd">
+                        Revenue Suite Master Control
+                      </Text>
+                    </InlineStack>
+                    <Badge tone={isEnabled ? "success" : "critical"}>
+                      {isEnabled ? "Live on Store" : "Paused"}
+                    </Badge>
                   </InlineStack>
-                  <Badge tone={isEnabled ? "success" : "critical"}>
-                    {isEnabled ? "Live on Store" : "Paused"}
-                  </Badge>
-                </InlineStack>
-                <Button
-                  tone={isEnabled ? "critical" : "success"}
-                  variant="primary"
-                  loading={isSaving}
-                  onClick={handleToggle}
-                >
-                  {isEnabled ? "Disable Revenue Suite" : "Enable Revenue Suite"}
-                </Button>
-              </BlockStack>
-            </Card>
+                  <Button
+                    tone={isEnabled ? "critical" : "success"}
+                    variant="primary"
+                    loading={isSaving}
+                    onClick={handleToggle}
+                  >
+                    {isEnabled
+                      ? "Disable Revenue Suite"
+                      : "Enable Revenue Suite"}
+                  </Button>
+                </BlockStack>
+              </Card>
+            </div>
 
             {/* STAT BOXES */}
             <Card>
@@ -825,7 +829,6 @@ function StatBox({ label, value, icon, tone, color }: any) {
       width="220px"
     >
       <BlockStack gap="200" align="center">
-        {/* Wrap the icon in a Box with a defined width to prevent the jump */}
         <Box width="20px" minHeight="20px">
           <Icon source={icon} tone={tone} />
         </Box>

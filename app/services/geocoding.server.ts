@@ -1,3 +1,5 @@
+import db from "../db.server";
+
 export interface Coordinates {
   lat: number;
   lng: number;
@@ -5,15 +7,52 @@ export interface Coordinates {
 
 /**
  * Geocode an address to coordinates.
- * Primary: Google Maps Geocoding API (server-side key)
+ * Primary: Database Cache
+ * Secondary: Google Maps Geocoding API (server-side key)
  * Fallback: OpenStreetMap Nominatim (free)
  */
 export async function geocodeAddress(
   address: string,
 ): Promise<Coordinates | null> {
-  const google = await geocodeWithGoogle(address);
-  if (google) return google;
-  return geocodeWithNominatim(address);
+  if (!address) return null;
+
+  const cacheKey = address.toLowerCase().trim();
+
+  try {
+    // 1. Check database cache first
+    const cached = await db.geoCache.findUnique({
+      where: { address: cacheKey },
+    });
+
+    if (cached) {
+      console.log(`[Geocoding] CACHE HIT for: ${cacheKey}`);
+      return { lat: cached.lat, lng: cached.lng };
+    }
+  } catch (err) {
+    console.error("[Geocoding] Cache read error:", err);
+  }
+
+  // 2. Fetch from APIs if not cached
+  console.log(`[Geocoding] CACHE MISS. Calling APIs for: ${cacheKey}`);
+  let result = await geocodeWithGoogle(address);
+  if (!result) {
+    result = await geocodeWithNominatim(address);
+  }
+
+  // 3. Save to cache using UPSERT to prevent race conditions
+  if (result) {
+    try {
+      await db.geoCache.upsert({
+        where: { address: cacheKey },
+        update: { lat: result.lat, lng: result.lng },
+        create: { address: cacheKey, lat: result.lat, lng: result.lng },
+      });
+    } catch (err) {
+      console.error("[Geocoding] Cache write error:", err);
+    }
+  }
+
+  return result;
 }
 
 async function geocodeWithGoogle(address: string): Promise<Coordinates | null> {

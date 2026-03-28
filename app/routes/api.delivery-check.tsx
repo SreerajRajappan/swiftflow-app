@@ -1,6 +1,7 @@
 import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import db from "../db.server";
+import { authenticate } from "../shopify.server"; // 👈 We need this now
 import { geocodeAddress } from "../services/geocoding.server";
 import {
   calculateDistance,
@@ -8,37 +9,30 @@ import {
   estimateDeliveryTime,
 } from "../services/proximity.server";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
-
 export async function loader({ request }: LoaderFunctionArgs) {
-  // Handle the browser's preflight OPTIONS request correctly
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS });
+  // 1. SECURE THE ENDPOINT: Magically handles HMAC verification for App Proxies
+  const { session } = await authenticate.public.appProxy(request);
+
+  if (!session) {
+    console.warn("Unauthorized direct access attempt to delivery-check API.");
+    return json({ error: "Unauthorized proxy request" }, { status: 401 });
   }
 
   const url = new URL(request.url);
-  const shop = url.searchParams.get("shop");
+
+  // 2. TRUST THE SESSION: Grab the shop securely from Shopify, NOT the URL
+  const shop = session.shop;
+
   const lat = url.searchParams.get("lat");
   const lng = url.searchParams.get("lng");
   const address = url.searchParams.get("address");
   const cartToken = url.searchParams.get("cartToken");
 
-  if (!shop) {
-    return json({ error: "Missing shop" }, { status: 400, headers: CORS });
-  }
-
   try {
     const settings = await db.appSettings.findUnique({ where: { shop } });
 
     if (!settings?.storeLat || !settings?.storeLng) {
-      return json(
-        { inRadius: false, error: "Store location not configured" },
-        { headers: CORS },
-      );
+      return json({ inRadius: false, error: "Store location not configured" });
     }
 
     // Resolve customer coordinates
@@ -66,10 +60,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
     }
 
     if (customerLat === null || customerLng === null) {
-      return json(
-        { inRadius: false, error: "Could not determine customer location" },
-        { headers: CORS },
-      );
+      return json({
+        inRadius: false,
+        error: "Could not determine customer location",
+      });
     }
 
     const distance = calculateDistance(
@@ -119,21 +113,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       },
     });
 
-    return json(
-      {
-        inRadius,
-        distance: parseFloat(distance.toFixed(2)),
-        message,
-        estimatedTime,
-        abVariant,
-      },
-      { headers: CORS },
-    );
+    return json({
+      inRadius,
+      distance: parseFloat(distance.toFixed(2)),
+      message,
+      estimatedTime,
+      abVariant,
+    });
   } catch (err) {
     console.error("[DeliveryCheck] Error:", err);
-    return json(
-      { inRadius: false, error: "Server error" },
-      { status: 500, headers: CORS },
-    );
+    return json({ inRadius: false, error: "Server error" }, { status: 500 });
   }
 }

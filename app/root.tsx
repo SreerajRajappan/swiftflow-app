@@ -1,4 +1,4 @@
-//root.tsx
+import { useEffect } from "react";
 import {
   Links,
   Meta,
@@ -17,6 +17,14 @@ export const links: LinksFunction = () => [
 ];
 
 export default function App() {
+  // This removes the restrictive SVG CSS the moment React hydrates and Vite has successfully injected the real Polaris CSS.
+  useEffect(() => {
+    const foucStyle = document.getElementById("fouc-fix");
+    if (foucStyle) {
+      foucStyle.remove();
+    }
+  }, []);
+
   return (
     <html lang="en">
       <head>
@@ -29,6 +37,21 @@ export default function App() {
         />
         <Meta />
         <Links />
+
+        {/* VITE FOUC FIX: Bruteforce SVGs to stay small. Removed by useEffect on load. */}
+        <style
+          id="fouc-fix"
+          dangerouslySetInnerHTML={{
+            __html: `
+              svg {
+                max-width: 24px !important;
+                max-height: 24px !important;
+                width: 24px !important;
+                height: 24px !important;
+              }
+            `,
+          }}
+        />
       </head>
       <body>
         <AppProvider i18n={{}}>

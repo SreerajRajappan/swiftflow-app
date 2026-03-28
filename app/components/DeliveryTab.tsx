@@ -36,6 +36,8 @@ export default function DeliveryTab({
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const circleRef = useRef<any>(null);
+  // 👇 FIX: We need a ref to track the marker so we can destroy it later
+  const markerRef = useRef<any>(null);
 
   useEffect(() => {
     if (data?.settings?.deliveryRadius) setRadius(data.settings.deliveryRadius);
@@ -101,8 +103,8 @@ export default function DeliveryTab({
           },
         );
 
-        // Drop the Pin at the store's exact location
-        new (window as any).google.maps.Marker({
+        // 👇 FIX: Attach the pin to our ref instead of making it anonymous
+        markerRef.current = new (window as any).google.maps.Marker({
           position: center,
           map: mapInstanceRef.current,
           title: "Your Store",
@@ -130,13 +132,18 @@ export default function DeliveryTab({
 
     initMap();
 
-    // Robust Cleanup Function to Prevent Memory Leaks
+    // 👇 FIX: Robust Cleanup Function including the missing Marker
     return () => {
       isMounted = false;
 
       if (circleRef.current) {
         circleRef.current.setMap(null);
         circleRef.current = null;
+      }
+
+      if (markerRef.current) {
+        markerRef.current.setMap(null); // Destroy the pin
+        markerRef.current = null;
       }
 
       if (mapInstanceRef.current && (window as any).google?.maps?.event) {

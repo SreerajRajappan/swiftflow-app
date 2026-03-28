@@ -13,17 +13,14 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     const { topic, shop, payload } = await authenticate.webhook(request);
 
-    // Allow both topics in case Shopify sends legacy cart updates
     if (topic !== "CHECKOUTS_UPDATE" && topic !== "CARTS_UPDATE") {
       return new Response("Unhandled webhook topic", { status: 200 });
     }
 
     const cart = payload as Record<string, any>;
 
-    // 🛑 CRITICAL FIX: Handle the token switch between Carts and Checkouts
     const checkoutToken = (cart.token as string | undefined) ?? null;
     const cartToken = (cart.cart_token as string | undefined) ?? checkoutToken;
-
     const customerEmail = (cart.email as string | undefined) ?? null;
     const shippingAddress = cart.shipping_address as Record<
       string,
@@ -39,25 +36,22 @@ export async function action({ request }: ActionFunctionArgs) {
     const settings = await db.appSettings.findFirst({ where: { shop } });
 
     if (!settings?.revenueSuiteEnabled) {
-      console.log("DEBUG: Skip - Revenue Suite is DISABLED in settings");
       return json({ success: true, skipped: "suite_disabled" });
     }
 
     if (!settings.storeLat || !settings.storeLng) {
-      console.log("DEBUG: Skip - Store location is missing");
       return json({ success: true, skipped: "store_location_missing" });
     }
 
-    // FILTER: We only want to track checkouts that have an email!
     if (!customerEmail) {
-      console.log("DEBUG: Skip - No customer email found");
       return json({ success: true, skipped: "no_email" });
     }
+
     const radiusMiles = getRadiusInMiles(
       settings.deliveryRadius,
       settings.unitSystem,
     );
-    // Resolve customer coordinates
+
     let customerLat: number | null = null;
     let customerLng: number | null = null;
     let customerAddress: string | null = null;
@@ -86,10 +80,6 @@ export async function action({ request }: ActionFunctionArgs) {
           customerLat,
           customerLng,
         );
-        const radiusMiles = getRadiusInMiles(
-          settings.deliveryRadius,
-          settings.unitSystem,
-        );
         inDeliveryZone = distance <= radiusMiles;
       }
     }
@@ -100,7 +90,6 @@ export async function action({ request }: ActionFunctionArgs) {
         : "B"
       : null;
 
-    // 👇 Update the variable name from deliveryRadiusMiles to radiusMiles
     console.log(`\n🔥 [WEBHOOK] Processing Checkout Update...`);
     console.log(`🌍 [GEO] Customer Address: ${customerAddress}`);
     console.log(
@@ -108,7 +97,31 @@ export async function action({ request }: ActionFunctionArgs) {
     );
     console.log(`🎯 [GEO] In Zone? ${inDeliveryZone}`);
 
-    // Upsert cart recovery record - quietly queueing it for the AI Agent
+    // 🛑 CRITICAL FIX: The Status Lock
+    // Check what the AI agent is currently doing with this cart before we upsert
+    const existingRecovery = await db.cartRecovery.findUnique({
+      where: { cartToken },
+    });
+
+    let newAgentStatus: string | undefined = undefined;
+
+    if (!existingRecovery) {
+      // It's a brand new cart
+      newAgentStatus =
+        inDeliveryZone && shippingAddress ? "IDLE" : "OUT_OF_ZONE";
+    } else {
+      // It exists. ONLY reset to IDLE if the AI hasn't processed it yet!
+      const isAlreadyProcessed =
+        existingRecovery.emailSent ||
+        existingRecovery.agentStatus === "COMPLETED" ||
+        existingRecovery.agentStatus === "PROCESSING";
+
+      if (!isAlreadyProcessed) {
+        newAgentStatus =
+          inDeliveryZone && shippingAddress ? "IDLE" : "OUT_OF_ZONE";
+      }
+    }
+
     await db.cartRecovery.upsert({
       where: { cartToken },
       update: {
@@ -120,8 +133,8 @@ export async function action({ request }: ActionFunctionArgs) {
         cartValue,
         lineItems,
         updatedAt: new Date(),
-        // Only queue for AI if they typed an address and are in the zone
-        ...(inDeliveryZone && shippingAddress ? { agentStatus: "IDLE" } : {}),
+        // Only update the agent status if it hasn't been locked by the AI
+        ...(newAgentStatus ? { agentStatus: newAgentStatus } : {}),
       },
       create: {
         shop,
@@ -135,7 +148,7 @@ export async function action({ request }: ActionFunctionArgs) {
         lineItems,
         abTestVariant,
         recoveryValue: cartValue,
-        agentStatus: inDeliveryZone && shippingAddress ? "IDLE" : "OUT_OF_ZONE",
+        agentStatus: newAgentStatus || "OUT_OF_ZONE",
       },
     });
 
