@@ -178,7 +178,7 @@ export default function BillingPage() {
           {/* BASIC PLAN */}
           <Layout.Section variant="oneThird">
             <Card>
-              <Box minHeight="320px">
+              <Box minHeight="350px">
                 <BlockStack gap="400">
                   <InlineStack gap={"200"}>
                     <div
@@ -210,6 +210,7 @@ export default function BillingPage() {
                     <FeatureItem text="Geofenced Delivery Checking" />
                     <FeatureItem text="Standard Recovery Emails" />
                     <FeatureItem text="Tracking Dashboard" />
+                    <FeatureItem text="Live Local Feed Ticker" />
                   </BlockStack>
                 </BlockStack>
               </Box>
@@ -231,7 +232,7 @@ export default function BillingPage() {
           {/* PRO PLAN */}
           <Layout.Section variant="oneThird">
             <Card background="bg-surface-secondary">
-              <Box minHeight="320px">
+              <Box minHeight="350px">
                 <BlockStack gap="400">
                   <InlineStack align="space-between" blockAlign="center">
                     <div
@@ -268,7 +269,8 @@ export default function BillingPage() {
                   <Divider />
                   <BlockStack gap="200">
                     <FeatureItem text="Up to $5,000 / mo recovered" bold />
-                    <FeatureItem text="Autonomous AI Emails" bold />
+                    <FeatureItem text="Context-Aware AI Emails" bold />
+                    <FeatureItem text="VIP Manual Permalinks" bold />
                     <FeatureItem text="A/B Offer Testing" />
                     <FeatureItem text="Customizable Badges" />
                   </BlockStack>
@@ -297,7 +299,7 @@ export default function BillingPage() {
           {/* ELITE PLAN */}
           <Layout.Section variant="oneThird">
             <Card>
-              <Box minHeight="320px">
+              <Box minHeight="350px">
                 <BlockStack gap="400">
                   <InlineStack gap="200" blockAlign="center">
                     <div style={{ display: "flex", alignItems: "center" }}>
@@ -363,7 +365,7 @@ export default function BillingPage() {
             </Box>
             <IndexTable
               resourceName={{ singular: "feature", plural: "features" }}
-              itemCount={8}
+              itemCount={10}
               headings={[
                 { title: "Features" },
                 { title: "Basic ($29)", alignment: "center" },
@@ -389,41 +391,55 @@ export default function BillingPage() {
                 },
                 {
                   id: "3",
+                  name: "Live Local Distance Ticker",
+                  basic: true,
+                  pro: true,
+                  elite: true,
+                },
+                {
+                  id: "4",
                   name: "Storefront Widget Design",
                   basic: "Standard",
                   pro: "Fully Customizable",
                   elite: "Fully Customizable",
                 },
                 {
-                  id: "4",
+                  id: "5",
                   name: "Cart Recovery Emails",
                   basic: "Standard Template",
                   pro: "Autonomous AI Agent",
                   elite: "Autonomous AI Agent",
                 },
                 {
-                  id: "5",
-                  name: "A/B Offer Testing",
-                  basic: false,
-                  pro: true,
-                  elite: true,
-                },
-                {
                   id: "6",
-                  name: "Revenue Leaks Detection",
+                  name: "Time-of-Day AI Context",
                   basic: false,
                   pro: true,
                   elite: true,
                 },
                 {
                   id: "7",
-                  name: "Deep Revenue Insights",
+                  name: "Manual VIP Permalinks",
                   basic: false,
                   pro: true,
                   elite: true,
                 },
                 {
                   id: "8",
+                  name: "A/B Offer Testing",
+                  basic: false,
+                  pro: true,
+                  elite: true,
+                },
+                {
+                  id: "9",
+                  name: "Revenue Leaks Detection",
+                  basic: false,
+                  pro: true,
+                  elite: true,
+                },
+                {
+                  id: "10",
                   name: "Support",
                   basic: "Email",
                   pro: "Priority",

@@ -121,6 +121,8 @@ model CartRecovery {
   discountCode    String?  
   agentStatus     String   @default("IDLE") 
   generatedEmail  String?  @db.Text
+
+  abandonedCheckoutUrl String?   @db.Text
   
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

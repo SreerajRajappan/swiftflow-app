@@ -22,6 +22,7 @@ import {
   MoneyIcon,
   ViewIcon,
   MagicIcon,
+  LocationIcon,
 } from "@shopify/polaris-icons";
 import { ZoneHealthCard } from "./ZoneHealthCard";
 import type { ZoneHealth } from "~/services/zone-health.server";
@@ -31,6 +32,7 @@ interface RevenueSuiteProps {
   fetcher: any;
   totalRevenue: number;
   todayRevenue: number;
+  todayChecks: number;
   dailyGoal: number;
   goalProgress: string;
   isEnabled: boolean;
@@ -40,6 +42,8 @@ interface RevenueSuiteProps {
   totalViews: number;
   conversionRate: string;
   recentConversions: any[];
+  recentChecks: any[];
+  pendingRecoveries: any[];
   shop: string;
   onResetData: () => void;
   isPro: boolean;
@@ -80,6 +84,7 @@ export function RevenueSuiteTab({
   fetcher,
   totalRevenue,
   todayRevenue,
+  todayChecks,
   dailyGoal,
   goalProgress,
   isEnabled,
@@ -88,6 +93,8 @@ export function RevenueSuiteTab({
   totalViews,
   conversionRate,
   recentConversions,
+  recentChecks,
+  pendingRecoveries,
   shop,
   onResetData,
   isPro,
@@ -120,8 +127,6 @@ export function RevenueSuiteTab({
   );
 
   const [isWaitingForAi, setIsWaitingForAi] = useState(false);
-
-  // State to track if we were previously saving to accurately close the edit box
   const [wasLocalSaving, setWasLocalSaving] = useState(false);
 
   const isLocalSaving =
@@ -143,7 +148,6 @@ export function RevenueSuiteTab({
     }
   }, [fetcher.state, fetcher.data, isWaitingForAi]);
 
-  // Bulletproof listener to close edit mode after save completes
   useEffect(() => {
     if (isLocalSaving) {
       setWasLocalSaving(true);
@@ -254,7 +258,6 @@ export function RevenueSuiteTab({
               }}
               action={{
                 content: "Leave a Review",
-                // Replace with your actual Shopify App Store review link once approved
                 url: `https://apps.shopify.com/swiftflow-local-delivery/reviews/new`,
                 onAction: () => {
                   const form = new FormData();
@@ -271,6 +274,73 @@ export function RevenueSuiteTab({
                 Store.
               </Text>
             </Banner>
+          </Box>
+        )}
+        {recentChecks && recentChecks.length > 0 && (
+          <Box>
+            <style>
+              {`
+                    @keyframes scrollTicker {
+                      0% { transform: translateX(100%); }
+                      100% { transform: translateX(-100%); }
+                    }
+                  `}
+            </style>
+            <div
+              style={{
+                backgroundColor: "var(--p-color-bg-surface-magic)",
+                border: "1px solid var(--p-color-border-magic)",
+                padding: "12px",
+                borderRadius: "8px",
+                display: "flex",
+                alignItems: "center",
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <div
+                style={{
+                  paddingRight: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  zIndex: 2,
+                  backgroundColor: "var(--p-color-bg-surface-magic)",
+                }}
+              >
+                <Icon source={LocationIcon} tone="magic" />
+                <Text
+                  as="span"
+                  variant="bodyMd"
+                  fontWeight="bold"
+                  tone="magic"
+                  truncate
+                >
+                  &nbsp;Live Local Feed:
+                </Text>
+              </div>
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <div
+                  style={{
+                    display: "inline-block",
+                    animation: "scrollTicker 25s linear infinite",
+                    color: "var(--p-color-text-magic)",
+                  }}
+                >
+                  {recentChecks.map((check: any, i: number) => {
+                    const city =
+                      check.customerAddress?.split(",")[1]?.trim() ||
+                      "your area";
+                    return (
+                      <span key={check.id} style={{ marginRight: "50px" }}>
+                        🔥 Customer in <strong>{city}</strong> just checked
+                        delivery eligibility ({check.distance?.toFixed(1)} miles
+                        away)
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </Box>
         )}
         <Layout.Section>
@@ -294,7 +364,14 @@ export function RevenueSuiteTab({
                   <Divider />
 
                   <Box>
-                    <InlineStack gap="400" wrap={false}>
+                    {/* 🚀 FIX: Used InlineGrid to allocate exactly 2x width to the mission description */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "2fr 1fr 1fr",
+                        gap: "var(--p-space-400)",
+                      }}
+                    >
                       <BlockStack gap="100">
                         <Text as="span" variant="bodySm" tone="subdued">
                           Current Mission
@@ -324,7 +401,7 @@ export function RevenueSuiteTab({
                           Autonomous Email Dispatch
                         </Text>
                       </BlockStack>
-                    </InlineStack>
+                    </div>
                   </Box>
                 </BlockStack>
               </Card>
@@ -342,7 +419,6 @@ export function RevenueSuiteTab({
                   </InlineStack>
                   <Divider />
 
-                  {/* 👇 THE ZERO-BUDGET UPSELL TRIGGER 👇 */}
                   {totalViews > 0 && totalRevenue === 0 ? (
                     <Banner tone="warning">
                       <Text as="p" variant="bodyMd">
@@ -357,21 +433,29 @@ export function RevenueSuiteTab({
                     </Banner>
                   ) : null}
 
-                  <Box>
-                    <Text as="p" variant="bodyMd" tone="subdued">
-                      Upgrade to Pro to unlock our autonomous AI agent. It
-                      verifies customer locations against your delivery radius
-                      and generates hyper-personalized, highly-converting
-                      recovery emails while you sleep.
-                    </Text>
-                  </Box>
-                  <Button
-                    onClick={() => navigate("/app/billing")}
-                    variant="primary"
-                    tone="success"
+                  {/* 🚀 FIX: Placed text and button in a flex container so the button sits aligned to the right */}
+                  <InlineStack
+                    align="space-between"
+                    blockAlign="center"
+                    wrap={false}
+                    gap="400"
                   >
-                    Upgrade to Pro & Capture Lost Revenue
-                  </Button>
+                    <div style={{ flex: 1 }}>
+                      <Text as="p" variant="bodyMd" tone="subdued">
+                        Upgrade to Pro to unlock our autonomous AI agent. It
+                        verifies customer locations against your delivery radius
+                        and generates hyper-personalized, highly-converting
+                        recovery emails while you sleep.
+                      </Text>
+                    </div>
+                    <Button
+                      onClick={() => navigate("/app/billing")}
+                      variant="primary"
+                      tone="success"
+                    >
+                      Upgrade to Pro & Capture Lost Revenue
+                    </Button>
+                  </InlineStack>
                 </BlockStack>
               </Card>
             )}
@@ -457,7 +541,6 @@ export function RevenueSuiteTab({
             </Card>
 
             {/* MASTER TOGGLE */}
-            {/* 👈 MOVED THE ID HERE SO IT SCROLLS DIRECTLY TO THIS CARD */}
             <div id="revenue-suite-section" style={{ scrollMarginTop: "24px" }}>
               <Card>
                 <BlockStack gap="400">
@@ -507,7 +590,15 @@ export function RevenueSuiteTab({
                     </Button>
                   )}
                 </InlineStack>
-                <InlineStack gap="400">
+                {/* 🚀 FIX: Used InlineGrid with 4 columns to stretch the boxes equally and eliminate right-side whitespace */}
+                <InlineGrid columns={4} gap="400">
+                  <StatBox
+                    label="Delivery Checks Today"
+                    value={todayChecks.toLocaleString()}
+                    icon={LocationIcon}
+                    tone="magic"
+                    color="var(--p-color-text-magic)"
+                  />
                   <StatBox
                     label="Est. Revenue Boost"
                     value={`$${totalRevenue.toLocaleString()}`}
@@ -523,13 +614,13 @@ export function RevenueSuiteTab({
                     color="var(--p-color-text-info)"
                   />
                   <StatBox
-                    label="Live Impressions"
+                    label="Total Impressions"
                     value={totalViews.toLocaleString()}
                     icon={ViewIcon}
                     tone="base"
                     color="var(--p-color-text-secondary)"
                   />
-                </InlineStack>
+                </InlineGrid>
               </BlockStack>
             </Card>
 
@@ -573,6 +664,68 @@ export function RevenueSuiteTab({
                 ))}
               </IndexTable>
             </Card>
+
+            {/* Manual Recovery Permalinks */}
+            {pendingRecoveries && pendingRecoveries.length > 0 && (
+              <Card padding="0">
+                <Box padding="400">
+                  <BlockStack gap="200">
+                    <Text as="h2" variant="headingMd">
+                      Pending VIP Carts (Manual Outreach)
+                    </Text>
+                    <Text as="p" tone="subdued" variant="bodySm">
+                      The AI Agent already emailed these customers. Copy their
+                      direct checkout link to text or DM them personally to
+                      close the sale.
+                    </Text>
+                  </BlockStack>
+                </Box>
+                <IndexTable
+                  resourceName={{ singular: "cart", plural: "carts" }}
+                  itemCount={pendingRecoveries.length}
+                  headings={[
+                    { title: "Customer" },
+                    { title: "Cart Value" },
+                    { title: "Action", alignment: "end" },
+                  ]}
+                  selectable={false}
+                >
+                  {pendingRecoveries.map((cart, index) => (
+                    <IndexTable.Row
+                      id={cart.id.toString()}
+                      key={cart.id}
+                      position={index}
+                    >
+                      <IndexTable.Cell>
+                        <Text as="span" variant="bodyMd" fontWeight="bold">
+                          {cart.customerEmail || "Unknown"}
+                        </Text>
+                      </IndexTable.Cell>
+                      <IndexTable.Cell>
+                        ${cart.cartValue?.toFixed(2)}
+                      </IndexTable.Cell>
+                      <IndexTable.Cell>
+                        <div style={{ textAlign: "right" }}>
+                          <Button
+                            size="micro"
+                            onClick={() => {
+                              navigator.clipboard.writeText(
+                                cart.abandonedCheckoutUrl,
+                              );
+                              shopify?.toast?.show(
+                                "Checkout link copied to clipboard!",
+                              );
+                            }}
+                          >
+                            Copy Checkout Link
+                          </Button>
+                        </div>
+                      </IndexTable.Cell>
+                    </IndexTable.Row>
+                  ))}
+                </IndexTable>
+              </Card>
+            )}
           </BlockStack>
         </Layout.Section>
 
@@ -747,6 +900,7 @@ export function RevenueSuiteTab({
                 )}
               </BlockStack>
             </Card>
+
             {/* --- LOCAL REFERRAL ENGINE --- */}
             <Card>
               <BlockStack gap="400">
@@ -826,12 +980,15 @@ function StatBox({ label, value, icon, tone, color }: any) {
       background="bg-surface-secondary"
       padding="500"
       borderRadius="300"
-      width="220px"
+      width="100%" /* 🚀 FIX: Removed fixed width to let InlineGrid stretch this naturally */
     >
-      <BlockStack gap="200" align="center">
-        <Box width="20px" minHeight="20px">
-          <Icon source={icon} tone={tone} />
-        </Box>
+      {/* 🚀 FIX: Changed to inlineAlign="center" for proper horizontal centering inside BlockStack */}
+      <BlockStack gap="200" inlineAlign="center">
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <Box width="20px" minHeight="20px">
+            <Icon source={icon} tone={tone} />
+          </Box>
+        </div>
         <Text as="p" variant="bodySm" alignment="center" tone="subdued">
           {label}
         </Text>

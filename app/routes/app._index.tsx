@@ -8,9 +8,19 @@ import {
   useNavigate,
   useSubmit,
   useFetcher,
-  useLocation, // 👈 Added useLocation
+  useLocation,
+  useRouteError,
+  isRouteErrorResponse, // 👈 Added useLocation
 } from "@remix-run/react";
-import { Page, Box, BlockStack, Banner, Text } from "@shopify/polaris";
+import {
+  Page,
+  Box,
+  BlockStack,
+  Banner,
+  Text,
+  Layout,
+  Button,
+} from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -79,6 +89,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const todayRevenue = todaysConversions._sum.orderValue || 0;
 
+  // 🚀 THE FIX: Query today's active delivery checks
+  const todayChecks = await prisma.deliveryCheck.count({
+    where: {
+      shop,
+      timestamp: { gte: startOfToday },
+    },
+  });
+
   // 3. Calculate Monthly Revenue (For Billing Enforcement)
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
@@ -105,6 +123,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     where: { shop },
     orderBy: { createdAt: "desc" },
     take: 5,
+  });
+
+  // 🚀 Fetch data for Live Ticker and Manual Outreach
+  const recentChecks = await prisma.deliveryCheck.findMany({
+    where: { shop },
+    orderBy: { timestamp: "desc" },
+    take: 5, // Get the 5 most recent checks for the ticker
+  });
+
+  const pendingRecoveries = await prisma.cartRecovery.findMany({
+    where: {
+      shop,
+      emailSent: true,
+      recovered: false,
+      abandonedCheckoutUrl: { not: null },
+    },
+    orderBy: { emailSentAt: "desc" },
+    take: 5, // Top 5 high-intent VIPs to manually text/email
   });
 
   const shopifyAdminName = shop.split(".")[0];
@@ -179,11 +215,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     totalViews,
     totalRevenue,
     todayRevenue,
+    todayChecks,
     currentMonthRevenue,
     hasReachedBasicLimit,
     hasReachedProLimit,
     conversionRate,
     recentConversions,
+    recentChecks,
+    pendingRecoveries,
     dailyGoal,
     goalProgress: Math.min(goalProgress, 100).toFixed(0),
     isBasic,
@@ -201,7 +240,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
   const shop = session.shop;
   const formData = await request.formData();
   const intent = formData.get("intent");
@@ -225,7 +264,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const body = formData.get("recoveryEmailBody") as string;
     const newGoal = parseFloat(formData.get("dailyGoal") as string) || 500;
 
-    const abTestEnabled = formData.get("abTestEnabled") === "true";
+    const planCheckArray: any = ALL_PAID_PLANS;
+    const billingCheck = await billing.check({
+      plans: planCheckArray,
+      isTest: true,
+    });
+
+    const subscription = billingCheck.appSubscriptions.find(
+      (sub) => sub.status === "ACTIVE",
+    );
+    const activePlanName = subscription?.name || "";
+
+    const isLegitimatelyPro =
+      PRO_PLANS.includes(activePlanName) ||
+      ELITE_PLANS.includes(activePlanName);
+
+    const clientRequestedAbTest = formData.get("abTestEnabled") === "true";
+
+    const abTestEnabled = isLegitimatelyPro ? clientRequestedAbTest : false;
+
     const abTestMessageA = formData.get("abTestMessageA") as string;
     const abTestMessageB = formData.get("abTestMessageB") as string;
 
@@ -509,6 +566,7 @@ export default function Index() {
             fetcher={fetcher}
             totalRevenue={data.totalRevenue}
             todayRevenue={data.todayRevenue}
+            todayChecks={data.todayChecks}
             dailyGoal={data.dailyGoal}
             goalProgress={data.goalProgress}
             isEnabled={isEnabled}
@@ -518,6 +576,8 @@ export default function Index() {
             totalViews={data.totalViews}
             conversionRate={data.conversionRate}
             recentConversions={data.recentConversions}
+            recentChecks={data.recentChecks}
+            pendingRecoveries={data.pendingRecoveries}
             shop={data.shop}
             onResetData={onResetData}
             isPro={data.isPro || data.isElite}
@@ -530,6 +590,44 @@ export default function Index() {
           />
         </Box>
       </BlockStack>
+    </Page>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  console.error("🚨 Dashboard Error:", error);
+
+  let errorMessage = "An unexpected server error occurred.";
+  if (isRouteErrorResponse(error)) {
+    errorMessage = `${error.status} ${error.statusText} - ${error.data}`;
+  } else if (error instanceof Error) {
+    errorMessage = error.message;
+  }
+
+  return (
+    <Page title="SwiftFlow: Revenue Suite">
+      <TitleBar title="SwiftFlow: Revenue Suite" />
+      <Layout>
+        <Layout.Section>
+          <Banner title="Dashboard failed to load" tone="critical">
+            <BlockStack gap="200">
+              <Text as="p" variant="bodyMd">
+                We encountered a problem while syncing your local delivery data.
+                This is usually a temporary issue.
+              </Text>
+              <Text as="p" variant="bodySm" tone="subdued">
+                <strong>Error Details:</strong> {errorMessage}
+              </Text>
+              <div style={{ marginTop: "10px" }}>
+                <Button onClick={() => window.location.reload()}>
+                  Refresh Dashboard
+                </Button>
+              </div>
+            </BlockStack>
+          </Banner>
+        </Layout.Section>
+      </Layout>
     </Page>
   );
 }

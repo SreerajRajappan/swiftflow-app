@@ -29,6 +29,10 @@ export async function action({ request }: ActionFunctionArgs) {
     const cartValue = parseFloat(cart.total_price ?? "0");
     const lineItems = cart.line_items || [];
 
+    const abandonedCheckoutUrl =
+      (cart.abandoned_checkout_url as string | undefined) ??
+      `https://${shop}/cart`;
+
     if (!cartToken) {
       return json({ success: true, skipped: "no_cart_token" });
     }
@@ -90,14 +94,13 @@ export async function action({ request }: ActionFunctionArgs) {
         : "B"
       : null;
 
-    console.log(`\n🔥 [WEBHOOK] Processing Checkout Update...`);
-    console.log(`🌍 [GEO] Customer Address: ${customerAddress}`);
-    console.log(
-      `📏 [GEO] Distance: ${distance?.toFixed(2) || "N/A"} miles | Radius: ${radiusMiles} miles`,
-    );
-    console.log(`🎯 [GEO] In Zone? ${inDeliveryZone}`);
+    // console.log(`\n🔥 [WEBHOOK] Processing Checkout Update...`);
+    // console.log(`🌍 [GEO] Customer Address: ${customerAddress}`);
+    // console.log(
+    //   `📏 [GEO] Distance: ${distance?.toFixed(2) || "N/A"} miles | Radius: ${radiusMiles} miles`,
+    // );
+    // console.log(`🎯 [GEO] In Zone? ${inDeliveryZone}`);
 
-    // 🛑 CRITICAL FIX: The Status Lock
     // Check what the AI agent is currently doing with this cart before we upsert
     const existingRecovery = await db.cartRecovery.findUnique({
       where: { cartToken },
@@ -133,6 +136,7 @@ export async function action({ request }: ActionFunctionArgs) {
         cartValue,
         lineItems,
         updatedAt: new Date(),
+        abandonedCheckoutUrl,
         // Only update the agent status if it hasn't been locked by the AI
         ...(newAgentStatus ? { agentStatus: newAgentStatus } : {}),
       },
@@ -149,6 +153,7 @@ export async function action({ request }: ActionFunctionArgs) {
         abTestVariant,
         recoveryValue: cartValue,
         agentStatus: newAgentStatus || "OUT_OF_ZONE",
+        abandonedCheckoutUrl,
       },
     });
 
