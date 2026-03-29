@@ -214,6 +214,40 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
   thirtyDaysAgo.setHours(0, 0, 0, 0);
 
+  const attributionData = await prisma.conversionEvent.findMany({
+    where: { shop, createdAt: { gte: thirtyDaysAgo } },
+    select: { orderValue: true, source: true, createdAt: true },
+  });
+
+  const attributionMap = new Map();
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(thirtyDaysAgo);
+    d.setDate(d.getDate() + i);
+    const dateStr = d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    attributionMap.set(dateStr, { date: dateStr, badge: 0, recovery: 0 });
+  }
+
+  attributionData.forEach((conv) => {
+    const dateStr = new Date(conv.createdAt).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    if (attributionMap.has(dateStr)) {
+      const dayData = attributionMap.get(dateStr);
+      // Map exact source string to the chart logic
+      if (conv.source === "cart_recovery") {
+        dayData.recovery += conv.orderValue;
+      } else {
+        dayData.badge += conv.orderValue;
+      }
+    }
+  });
+
+  const attributionChartData = Array.from(attributionMap.values());
+
   // 1. Fetch Recovered (The Green Line)
   const recoveredData = await prisma.conversionEvent.findMany({
     where: { shop, createdAt: { gte: thirtyDaysAgo } },
@@ -346,6 +380,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recentChecks,
     pendingRecoveries,
     revenueChartData,
+    attributionChartData,
     dailyGoal,
     funnelData,
     heatmapData,

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import {
   Layout,
   Card,
@@ -11,16 +12,25 @@ import {
   Box,
   EmptyState,
   InlineGrid,
-  ProgressBar,
   DataTable,
 } from "@shopify/polaris";
 import { ChartVerticalIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "@remix-run/react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 interface InsightsTabProps {
   isPro: boolean;
   trendingProducts: any[];
   recentConversions: any[];
+  attributionChartData?: { date: string; badge: number; recovery: number }[];
   stats: {
     totalRevenue: number;
     totalOrders: number;
@@ -42,9 +52,18 @@ export function InsightsTab({
   isPro,
   trendingProducts,
   recentConversions,
+  attributionChartData = [],
   stats,
 }: InsightsTabProps) {
   const navigate = useNavigate();
+
+  // Bulletproof rendering state to prevent Hydration & SVG measuring crashes
+  const [isChartMounted, setIsChartMounted] = useState(false);
+  useEffect(() => {
+    setIsChartMounted(true);
+  }, []);
+
+  console.log("attributionChartData: ", attributionChartData);
 
   if (!isPro) {
     return (
@@ -68,7 +87,6 @@ export function InsightsTab({
     );
   }
 
-  // 👇 FIX 1: Safe Order ID extraction & Visual Badges
   const tableRows = (recentConversions || []).map((c) => {
     const orderIdDisplay = c.orderId ? `#${c.orderId.split("/").pop()}` : "N/A";
 
@@ -87,20 +105,11 @@ export function InsightsTab({
         +${(c.orderValue || 0).toFixed(2)}
       </Text>,
       <Box key={`src-${c.id}`}>{sourceBadge}</Box>,
-      <Text key={`date-${c.id}`} as="span" tone="subdued">
-        {new Date(c.createdAt).toLocaleDateString()}
-      </Text>,
+      <span key={`date-${c.id}`} suppressHydrationWarning>
+        {isChartMounted ? new Date(c.createdAt).toLocaleDateString() : ""}
+      </span>,
     ];
   });
-
-  const badgeProgress =
-    stats?.totalRevenue > 0
-      ? (stats.badgeRevenue / stats.totalRevenue) * 100
-      : 0;
-  const recoveryProgress =
-    stats?.totalRevenue > 0
-      ? (stats.recoveryRevenue / stats.totalRevenue) * 100
-      : 0;
 
   return (
     <BlockStack gap="400">
@@ -147,56 +156,121 @@ export function InsightsTab({
       </InlineGrid>
 
       <Layout>
-        {/* REVENUE BREAKDOWN */}
-        <Layout.Section variant="oneHalf">
+        {/* 🚀 THE UPGRADE: Full-Width Stacked Attribution Chart */}
+        <Layout.Section>
           <Card>
             <BlockStack gap="400">
-              <Text as="h3" variant="headingMd">
-                Revenue Breakdown
-              </Text>
+              <InlineStack align="space-between" blockAlign="center">
+                <Text as="h3" variant="headingMd">
+                  Revenue Attribution (Last 30 Days)
+                </Text>
+                <InlineStack gap="200">
+                  <Badge tone="success">Passive (Badge)</Badge>
+                  <Badge tone="magic">Active (AI Agent)</Badge>
+                </InlineStack>
+              </InlineStack>
               <Divider />
-              <InlineGrid columns={2} gap="600">
-                <BlockStack gap="200">
-                  <InlineStack align="space-between">
-                    <Text as="p" variant="bodyMd" fontWeight="semibold">
-                      Delivery Badge
-                    </Text>
-                    <Badge tone="success">Badge</Badge>
-                  </InlineStack>
-                  <Text as="p" variant="headingLg">
-                    ${(stats?.badgeRevenue || 0).toFixed(2)}
-                  </Text>
-                  <ProgressBar
-                    progress={badgeProgress}
-                    tone="success"
-                    size="small"
-                  />
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    {stats?.badgeOrders || 0} orders
-                  </Text>
-                </BlockStack>
 
-                <BlockStack gap="200">
-                  <InlineStack align="space-between">
-                    <Text as="p" variant="bodyMd" fontWeight="semibold">
-                      Cart Recovery
+              <div
+                style={{
+                  height: 320,
+                  width: "100%",
+                  minWidth: 0,
+                  position: "relative",
+                }}
+              >
+                {isChartMounted && attributionChartData.length > 0 ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                    }}
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={attributionChartData}
+                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          vertical={false}
+                          stroke="#e1e3e5"
+                        />
+                        <XAxis
+                          dataKey="date"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#6d7175", fontSize: 11 }}
+                          dy={10}
+                          minTickGap={30}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#6d7175", fontSize: 11 }}
+                          tickFormatter={(val) => `$${val}`}
+                        />
+                        <Tooltip
+                          cursor={{ fill: "#f4f6f8" }}
+                          contentStyle={{
+                            borderRadius: "8px",
+                            border: "1px solid #c9cccf",
+                            backgroundColor: "#ffffff",
+                            boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+                          }}
+                          formatter={(value: any, name: any) => {
+                            const formattedValue = `$${Number(value || 0).toFixed(2)}`;
+                            const label =
+                              name === "badge"
+                                ? "Delivery Badge"
+                                : "AI Cart Recovery";
+                            return [formattedValue, label];
+                          }}
+                          labelStyle={{
+                            color: "#202223",
+                            fontWeight: "bold",
+                            marginBottom: "8px",
+                          }}
+                        />
+                        {/* Stack ID groups the bars together */}
+                        <Bar
+                          dataKey="badge"
+                          name="badge"
+                          stackId="a"
+                          fill="#008060"
+                          radius={[0, 0, 4, 4]}
+                          isAnimationActive={false}
+                        />
+                        <Bar
+                          dataKey="recovery"
+                          name="recovery"
+                          stackId="a"
+                          fill="#9e52fa"
+                          radius={[4, 4, 0, 0]}
+                          isAnimationActive={false}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      height: "100%",
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text as="span" tone="subdued">
+                      Loading attribution data...
                     </Text>
-                    <Badge tone="magic">Recovery</Badge>
-                  </InlineStack>
-                  <Text as="p" variant="headingLg">
-                    ${(stats?.recoveryRevenue || 0).toFixed(2)}
-                  </Text>
-                  {/* Changed tone from "highlight" to "primary" for better visual contrast */}
-                  <ProgressBar
-                    progress={recoveryProgress}
-                    tone="primary"
-                    size="small"
-                  />
-                  <Text as="p" tone="subdued" variant="bodySm">
-                    {stats?.recoveryOrders || 0} orders
-                  </Text>
-                </BlockStack>
-              </InlineGrid>
+                  </div>
+                )}
+              </div>
             </BlockStack>
           </Card>
         </Layout.Section>
@@ -227,7 +301,7 @@ export function InsightsTab({
         </Layout.Section>
 
         {/* TRENDING PRODUCTS TABLE */}
-        <Layout.Section>
+        <Layout.Section variant="oneHalf">
           <Box paddingBlockEnd="800">
             <Card>
               <BlockStack gap="400">
@@ -247,9 +321,9 @@ export function InsightsTab({
                     itemCount={trendingProducts.length}
                     headings={[
                       { title: "" },
-                      { title: "Product Name" },
-                      { title: "Performance Metrics" },
-                      { title: "Revenue Generated", alignment: "end" },
+                      { title: "Product" },
+                      { title: "Metrics" },
+                      { title: "Revenue", alignment: "end" },
                     ]}
                     selectable={false}
                   >
@@ -279,9 +353,13 @@ export function InsightsTab({
                           </Box>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Text as="span" fontWeight="bold">
-                            {product.title}
-                          </Text>
+                          <div
+                            style={{ maxWidth: "120px", whiteSpace: "normal" }}
+                          >
+                            <Text as="span" fontWeight="bold" breakWord>
+                              {product.title}
+                            </Text>
+                          </div>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           <InlineStack gap="100">
