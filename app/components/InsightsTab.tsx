@@ -63,8 +63,6 @@ export function InsightsTab({
     setIsChartMounted(true);
   }, []);
 
-  console.log("attributionChartData: ", attributionChartData);
-
   if (!isPro) {
     return (
       <Card>
@@ -113,6 +111,19 @@ export function InsightsTab({
 
   return (
     <BlockStack gap="400">
+      {/* 🚀 THE FIX: Global SVG override specifically protecting Recharts from Polaris */}
+      <style>
+        {`
+          /* Override Shopify Polaris 20px SVG rule for Recharts elements */
+          .recharts-wrapper svg,
+          .recharts-surface {
+            max-width: none !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+        `}
+      </style>
+
       {/* KPI ROW */}
       <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
         {[

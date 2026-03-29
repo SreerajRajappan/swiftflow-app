@@ -43,13 +43,23 @@
       const productForms = document.querySelectorAll('form[action*="/cart/add"]');
 
       productForms.forEach(form => {
-        // Create a hidden field inside the form ONLY if it doesn't already exist
         if (!form.querySelector('.sf-hidden-personalization')) {
           const hiddenInput = document.createElement('input');
           hiddenInput.type = 'hidden';
           hiddenInput.name = 'properties[Personalization]';
           hiddenInput.className = 'sf-hidden-personalization';
           form.appendChild(hiddenInput);
+        }
+
+        // 🚀 Inject a hidden tracking attribution property!
+        // The underscore (_) tells Shopify to hide this from the user's cart UI
+        if (!form.querySelector('.sf-tracking-source')) {
+          const trackingInput = document.createElement('input');
+          trackingInput.type = 'hidden';
+          trackingInput.name = 'properties[_SwiftFlow_Source]';
+          trackingInput.value = 'delivery_badge';
+          trackingInput.className = 'sf-tracking-source';
+          form.appendChild(trackingInput);
         }
       });
 

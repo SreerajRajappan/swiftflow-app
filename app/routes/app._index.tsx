@@ -10,7 +10,7 @@ import {
   useFetcher,
   useLocation,
   useRouteError,
-  isRouteErrorResponse, // 👈 Added useLocation
+  isRouteErrorResponse,
 } from "@remix-run/react";
 import {
   Page,
@@ -89,7 +89,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const todayRevenue = todaysConversions._sum.orderValue || 0;
 
-  // 🚀 THE FIX: Query today's active delivery checks
+  // 🚀 Query today's active delivery checks
   const todayChecks = await prisma.deliveryCheck.count({
     where: {
       shop,
@@ -179,7 +179,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       description:
         "Flip the master switch below to start tracking local abandoned carts.",
       done: settings?.revenueSuiteEnabled ?? false,
-      href: "#revenue-suite-section", // 👈 Changed from "#" to a specific ID
+      href: "#revenue-suite-section",
       cta: "Scroll down to enable",
     },
   ];
@@ -213,40 +213,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
   thirtyDaysAgo.setHours(0, 0, 0, 0);
-
-  const attributionData = await prisma.conversionEvent.findMany({
-    where: { shop, createdAt: { gte: thirtyDaysAgo } },
-    select: { orderValue: true, source: true, createdAt: true },
-  });
-
-  const attributionMap = new Map();
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(thirtyDaysAgo);
-    d.setDate(d.getDate() + i);
-    const dateStr = d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-    attributionMap.set(dateStr, { date: dateStr, badge: 0, recovery: 0 });
-  }
-
-  attributionData.forEach((conv) => {
-    const dateStr = new Date(conv.createdAt).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-    if (attributionMap.has(dateStr)) {
-      const dayData = attributionMap.get(dateStr);
-      // Map exact source string to the chart logic
-      if (conv.source === "cart_recovery") {
-        dayData.recovery += conv.orderValue;
-      } else {
-        dayData.badge += conv.orderValue;
-      }
-    }
-  });
-
-  const attributionChartData = Array.from(attributionMap.values());
 
   // 1. Fetch Recovered (The Green Line)
   const recoveredData = await prisma.conversionEvent.findMany({
@@ -380,7 +346,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recentChecks,
     pendingRecoveries,
     revenueChartData,
-    attributionChartData,
     dailyGoal,
     funnelData,
     heatmapData,
@@ -590,12 +555,10 @@ export default function Index() {
     }
   }, [submit]);
 
-  // 👈 NEW: Smooth Scroll Hook Listener
   useEffect(() => {
     if (location.hash === "#revenue-suite-section") {
       const element = document.getElementById("revenue-suite-section");
       if (element) {
-        // A slight timeout ensures React has finished rendering any dynamic UI before scrolling
         setTimeout(() => {
           element.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 100);
@@ -603,7 +566,6 @@ export default function Index() {
     }
   }, [location.hash]);
 
-  // Confetti effect for Daily Goal AND First Recovery
   useEffect(() => {
     // 1. Daily Goal Celebration
     const hasCelebratedToday = sessionStorage.getItem(
@@ -619,12 +581,11 @@ export default function Index() {
       sessionStorage.removeItem(`celebrated_${data.dailyGoal}`);
     }
 
-    // 2. NEW: First Recovery Celebration
+    // 2. First Recovery Celebration
     const hasCelebratedFirstRecovery = localStorage.getItem(
       "celebrated_first_recovery",
     );
     if (data.totalRevenue > 0 && !hasCelebratedFirstRecovery) {
-      // Bigger, gold-themed confetti for the first dollar made
       confetti({
         particleCount: 250,
         spread: 100,
@@ -636,7 +597,6 @@ export default function Index() {
     }
   }, [data.goalProgress, data.dailyGoal, data.totalRevenue, shopify]);
 
-  // Toast notifications
   useEffect(() => {
     if (fetcher.data && (fetcher.data as any).success) {
       shopify?.toast?.show(

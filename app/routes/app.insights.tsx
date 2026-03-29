@@ -35,6 +35,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // 2. Advanced Stats Aggregation (Last 30 Days)
   const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  last30Days.setHours(0, 0, 0, 0); // 🚀 FIX: Align to midnight for accurate chart grouping
+
   const allConversions = await prisma.conversionEvent.findMany({
     where: { shop, createdAt: { gte: last30Days } },
   });
@@ -75,6 +77,35 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recoveryRate: emailsSent > 0 ? (recovered.length / emailsSent) * 100 : 0,
   };
 
+  // 🚀 THE FIX: Calculate attributionChartData using the allConversions array
+  const attributionMap = new Map();
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(last30Days);
+    d.setDate(d.getDate() + i);
+    const dateStr = d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    attributionMap.set(dateStr, { date: dateStr, badge: 0, recovery: 0 });
+  }
+
+  allConversions.forEach((conv) => {
+    const dateStr = new Date(conv.createdAt).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    if (attributionMap.has(dateStr)) {
+      const dayData = attributionMap.get(dateStr);
+      if (conv.source === "cart_recovery") {
+        dayData.recovery += conv.orderValue;
+      } else {
+        dayData.badge += conv.orderValue;
+      }
+    }
+  });
+
+  const attributionChartData = Array.from(attributionMap.values());
+
   // 3. Trending Products via GraphQL
   const trendingData = await prisma.productView.groupBy({
     by: ["productId"],
@@ -104,7 +135,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           ...item,
           title: product?.title || "Unknown Product",
           image: product?.featuredMedia?.preview?.image?.url || "",
-          revenue: 0,
+          revenue: 0, // This could theoretically be calculated if product revenue tracking exists
         };
       } catch (e) {
         return { ...item, title: "Product Deleted", image: "", revenue: 0 };
@@ -117,6 +148,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recentConversions,
     advancedStats,
     trendingProducts: enrichedProducts,
+    attributionChartData, // 👈 Export the calculated chart data
   });
 };
 
@@ -132,6 +164,7 @@ export default function InsightsRoute() {
           trendingProducts={data.trendingProducts}
           recentConversions={data.recentConversions}
           stats={data.advancedStats}
+          attributionChartData={data.attributionChartData} // 👈 Pass to the component
         />
       </BlockStack>
     </Page>

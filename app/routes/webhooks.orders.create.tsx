@@ -22,12 +22,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     orderPayload.contact_email ||
     orderPayload.customer?.email;
 
-  // We will track if this sale came from our AI Agent
+  // We will track if this sale came from our AI Agent or the Badge
   let isAiRecovery = false;
+  let isBadgeConversion = false;
 
   try {
+    // 🚀 Scan line items for our hidden attribution property
+    if (orderPayload.line_items && Array.isArray(orderPayload.line_items)) {
+      for (const item of orderPayload.line_items) {
+        if (item.properties && Array.isArray(item.properties)) {
+          const hasTracking = item.properties.some(
+            (prop: any) =>
+              prop.name === "_SwiftFlow_Source" &&
+              prop.value === "delivery_badge",
+          );
+          if (hasTracking) {
+            isBadgeConversion = true;
+            break; // Found it! No need to check other items
+          }
+        }
+      }
+    }
+
     // --- PHASE 3: AI RECOVERY CLOSURE ---
-    // Search by Token OR Email to catch cross-device or new-checkout recoveries
     const searchConditions: any[] = [];
     if (checkoutToken) searchConditions.push({ cartToken: checkoutToken });
     if (cartToken) searchConditions.push({ cartToken: cartToken });
@@ -80,6 +97,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
     }
 
+    // 🚀 Determine the final attribution source
+    // Priority 1: AI Recovery (They abandoned, we emailed them, they bought)
+    // Priority 2: Badge Conversion (They used the widget and bought directly)
+    // Priority 3: Organic (They bought without ever interacting with the widget)
+    let finalSource = "organic";
+    if (isAiRecovery) {
+      finalSource = "cart_recovery";
+    } else if (isBadgeConversion) {
+      finalSource = "delivery_badge";
+    }
+
     // --- RECORD THE CONVERSION EVENT ---
     await prisma.conversionEvent.upsert({
       where: { orderId: orderId },
@@ -88,13 +116,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         shop: shop,
         orderId: orderId,
         orderValue: totalAmount,
-        source: isAiRecovery ? "cart_recovery" : "organic",
+        source: finalSource,
         cartToken: checkoutToken || cartToken || null,
       },
     });
 
     console.log(
-      `Successfully recorded ConversionEvent for ${shop}: $${totalAmount} (Source: ${isAiRecovery ? "AI Agent" : "Organic"})`,
+      `Successfully recorded ConversionEvent for ${shop}: $${totalAmount} (Source: ${finalSource})`,
     );
   } catch (error) {
     console.error("Error processing order webhook:", error);
