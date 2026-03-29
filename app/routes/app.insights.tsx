@@ -33,12 +33,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 5,
   });
 
-  // 2. Advanced Stats Aggregation (Last 30 Days)
-  const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  last30Days.setHours(0, 0, 0, 0);
+  // 🚀 THE FIX: Correctly calculate the 30-day window to INCLUDE TODAY
+  const today = new Date();
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(today.getDate() - 29); // Back 29 days + Today = 30 Days total
+  thirtyDaysAgo.setHours(0, 0, 0, 0);
 
   const allConversions = await prisma.conversionEvent.findMany({
-    where: { shop, createdAt: { gte: last30Days } },
+    where: { shop, createdAt: { gte: thirtyDaysAgo } },
   });
 
   const badgeConversions = allConversions.filter(
@@ -49,7 +51,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   );
 
   const allChecks = await prisma.deliveryCheck.findMany({
-    where: { shop, timestamp: { gte: last30Days } },
+    where: { shop, timestamp: { gte: thirtyDaysAgo } },
   });
   const inRadiusCount = allChecks.filter((c) => c.inRadius).length;
 
@@ -58,7 +60,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
   const emailsSent = cartRecoveries.filter((c) => c.emailSent).length;
   const recovered = cartRecoveries.filter(
-    (c) => c.recovered && c.recoveredAt && c.recoveredAt >= last30Days,
+    (c) => c.recovered && c.recoveredAt && c.recoveredAt >= thirtyDaysAgo,
   );
 
   const advancedStats = {
@@ -78,11 +80,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recoveryRate: emailsSent > 0 ? (recovered.length / emailsSent) * 100 : 0,
   };
 
-  // 🚀 THE FIX: Separate Organic, Badge, and Recovery buckets accurately
   const attributionMap = new Map();
   for (let i = 0; i < 30; i++) {
-    const d = new Date(last30Days);
-    d.setDate(d.getDate() + i);
+    const d = new Date(thirtyDaysAgo);
+    d.setDate(d.getDate() + i); // This now finishes exactly on Today!
     const dateStr = d.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",

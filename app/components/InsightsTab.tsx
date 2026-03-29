@@ -30,7 +30,13 @@ interface InsightsTabProps {
   isPro: boolean;
   trendingProducts: any[];
   recentConversions: any[];
-  attributionChartData?: { date: string; badge: number; recovery: number }[];
+  // 🚀 FIX: Added 'organic' to the TypeScript definition
+  attributionChartData?: {
+    date: string;
+    badge: number;
+    recovery: number;
+    organic: number;
+  }[];
   stats: {
     totalRevenue: number;
     totalOrders: number;
@@ -93,6 +99,8 @@ export function InsightsTab({
       sourceBadge = <Badge tone="success">Delivery Badge</Badge>;
     } else if (c.source === "cart_recovery") {
       sourceBadge = <Badge tone="magic">Cart Recovery</Badge>;
+    } else if (c.source === "organic") {
+      sourceBadge = <Badge>Organic</Badge>;
     }
 
     return [
@@ -111,7 +119,6 @@ export function InsightsTab({
 
   return (
     <BlockStack gap="400">
-      {/* 🚀 THE FIX: Global SVG override specifically protecting Recharts from Polaris */}
       <style>
         {`
           /* Override Shopify Polaris 20px SVG rule for Recharts elements */
@@ -167,7 +174,7 @@ export function InsightsTab({
       </InlineGrid>
 
       <Layout>
-        {/* 🚀 THE UPGRADE: Full-Width Stacked Attribution Chart */}
+        {/* Full-Width Stacked Attribution Chart */}
         <Layout.Section>
           <Card>
             <BlockStack gap="400">
@@ -176,6 +183,7 @@ export function InsightsTab({
                   Revenue Attribution (Last 30 Days)
                 </Text>
                 <InlineStack gap="200">
+                  <Badge>Organic</Badge>
                   <Badge tone="success">Passive (Badge)</Badge>
                   <Badge tone="magic">Active (AI Agent)</Badge>
                 </InlineStack>
@@ -234,10 +242,15 @@ export function InsightsTab({
                           }}
                           formatter={(value: any, name: any) => {
                             const formattedValue = `$${Number(value || 0).toFixed(2)}`;
-                            const label =
-                              name === "badge"
-                                ? "Delivery Badge"
-                                : "AI Cart Recovery";
+
+                            // 🚀 THE FIX: Explicitly assign labels for all 3 categories
+                            let label = "Organic";
+                            if (name === "badge") {
+                              label = "Delivery Badge";
+                            } else if (name === "recovery") {
+                              label = "AI Cart Recovery";
+                            }
+
                             return [formattedValue, label];
                           }}
                           labelStyle={{
@@ -246,7 +259,6 @@ export function InsightsTab({
                             marginBottom: "8px",
                           }}
                         />
-                        {/* Stack ID groups the bars together */}
                         <Bar
                           dataKey="organic"
                           name="organic"
@@ -260,7 +272,7 @@ export function InsightsTab({
                           name="badge"
                           stackId="a"
                           fill="#008060"
-                          radius={[0, 0, 4, 4]}
+                          radius={[0, 0, 0, 0]}
                           isAnimationActive={false}
                         />
                         <Bar
