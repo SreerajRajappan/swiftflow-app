@@ -248,6 +248,14 @@ export function InsightsTab({
                         />
                         {/* Stack ID groups the bars together */}
                         <Bar
+                          dataKey="organic"
+                          name="organic"
+                          stackId="a"
+                          fill="#e1e3e5"
+                          radius={[0, 0, 0, 0]}
+                          isAnimationActive={false}
+                        />
+                        <Bar
                           dataKey="badge"
                           name="badge"
                           stackId="a"

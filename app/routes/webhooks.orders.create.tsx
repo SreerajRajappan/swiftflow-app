@@ -24,10 +24,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // We will track if this sale came from our AI Agent or the Badge
   let isAiRecovery = false;
-  let isBadgeConversion = false;
+  let isBadgeConversion = false; // 🚀 New flag added
 
   try {
-    // 🚀 Scan line items for our hidden attribution property
+    // 🚀 THE FIX: Scan line items for our hidden attribution property
     if (orderPayload.line_items && Array.isArray(orderPayload.line_items)) {
       for (const item of orderPayload.line_items) {
         if (item.properties && Array.isArray(item.properties)) {
@@ -45,6 +45,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
 
     // --- PHASE 3: AI RECOVERY CLOSURE ---
+    // Search by Token OR Email to catch cross-device or new-checkout recoveries
     const searchConditions: any[] = [];
     if (checkoutToken) searchConditions.push({ cartToken: checkoutToken });
     if (cartToken) searchConditions.push({ cartToken: cartToken });
@@ -97,13 +98,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       }
     }
 
-    // 🚀 Determine the final attribution source
-    // Priority 1: AI Recovery (They abandoned, we emailed them, they bought)
-    // Priority 2: Badge Conversion (They used the widget and bought directly)
-    // Priority 3: Organic (They bought without ever interacting with the widget)
+    // 🚀 Determine final attribution source
     let finalSource = "organic";
     if (isAiRecovery) {
-      finalSource = "cart_recovery";
+      finalSource = "cart_recovery"; // AI recovery overrides everything
     } else if (isBadgeConversion) {
       finalSource = "delivery_badge";
     }
@@ -116,7 +114,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         shop: shop,
         orderId: orderId,
         orderValue: totalAmount,
-        source: finalSource,
+        source: finalSource, // 👈 Saved dynamically based on our checks
         cartToken: checkoutToken || cartToken || null,
       },
     });

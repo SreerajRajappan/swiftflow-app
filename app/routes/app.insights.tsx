@@ -35,11 +35,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   // 2. Advanced Stats Aggregation (Last 30 Days)
   const last30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  last30Days.setHours(0, 0, 0, 0); // 🚀 FIX: Align to midnight for accurate chart grouping
+  last30Days.setHours(0, 0, 0, 0);
 
   const allConversions = await prisma.conversionEvent.findMany({
     where: { shop, createdAt: { gte: last30Days } },
   });
+
   const badgeConversions = allConversions.filter(
     (c) => c.source === "delivery_badge",
   );
@@ -77,7 +78,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recoveryRate: emailsSent > 0 ? (recovered.length / emailsSent) * 100 : 0,
   };
 
-  // 🚀 THE FIX: Calculate attributionChartData using the allConversions array
+  // 🚀 THE FIX: Separate Organic, Badge, and Recovery buckets accurately
   const attributionMap = new Map();
   for (let i = 0; i < 30; i++) {
     const d = new Date(last30Days);
@@ -86,7 +87,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       month: "short",
       day: "numeric",
     });
-    attributionMap.set(dateStr, { date: dateStr, badge: 0, recovery: 0 });
+    // Add an organic bucket to the map
+    attributionMap.set(dateStr, {
+      date: dateStr,
+      badge: 0,
+      recovery: 0,
+      organic: 0,
+    });
   }
 
   allConversions.forEach((conv) => {
@@ -98,8 +105,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       const dayData = attributionMap.get(dateStr);
       if (conv.source === "cart_recovery") {
         dayData.recovery += conv.orderValue;
-      } else {
+      } else if (conv.source === "delivery_badge") {
         dayData.badge += conv.orderValue;
+      } else {
+        dayData.organic += conv.orderValue; // Capture the organic sales!
       }
     }
   });
@@ -135,7 +144,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           ...item,
           title: product?.title || "Unknown Product",
           image: product?.featuredMedia?.preview?.image?.url || "",
-          revenue: 0, // This could theoretically be calculated if product revenue tracking exists
+          revenue: 0,
         };
       } catch (e) {
         return { ...item, title: "Product Deleted", image: "", revenue: 0 };
@@ -148,7 +157,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recentConversions,
     advancedStats,
     trendingProducts: enrichedProducts,
-    attributionChartData, // 👈 Export the calculated chart data
+    attributionChartData,
   });
 };
 
@@ -164,7 +173,7 @@ export default function InsightsRoute() {
           trendingProducts={data.trendingProducts}
           recentConversions={data.recentConversions}
           stats={data.advancedStats}
-          attributionChartData={data.attributionChartData} // 👈 Pass to the component
+          attributionChartData={data.attributionChartData}
         />
       </BlockStack>
     </Page>
