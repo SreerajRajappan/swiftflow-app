@@ -24,6 +24,20 @@ import {
   MagicIcon,
   LocationIcon,
 } from "@shopify/polaris-icons";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  ScatterChart,
+  Scatter,
+  ZAxis,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { ZoneHealthCard } from "./ZoneHealthCard";
 import type { ZoneHealth } from "~/services/zone-health.server";
 
@@ -44,6 +58,9 @@ interface RevenueSuiteProps {
   recentConversions: any[];
   recentChecks: any[];
   pendingRecoveries: any[];
+  revenueChartData: { date: string; revenue: number; missed: number }[];
+  funnelData: any[];
+  heatmapData: any[];
   shop: string;
   onResetData: () => void;
   isPro: boolean;
@@ -95,6 +112,9 @@ export function RevenueSuiteTab({
   recentConversions,
   recentChecks,
   pendingRecoveries,
+  revenueChartData,
+  funnelData,
+  heatmapData,
   shop,
   onResetData,
   isPro,
@@ -128,6 +148,11 @@ export function RevenueSuiteTab({
 
   const [isWaitingForAi, setIsWaitingForAi] = useState(false);
   const [wasLocalSaving, setWasLocalSaving] = useState(false);
+  const [isChartMounted, setIsChartMounted] = useState(false);
+
+  useEffect(() => {
+    setIsChartMounted(true);
+  }, []);
 
   const isLocalSaving =
     fetcher.state === "submitting" &&
@@ -242,8 +267,31 @@ export function RevenueSuiteTab({
       ].proPrompt
     : "";
 
+  const processedFunnelData = (funnelData || []).map((item, index) => {
+    const fallbackColors = ["#c9cccf", "#9e52fa", "#ffc453", "#008060"];
+    return { ...item, fill: fallbackColors[index % fallbackColors.length] };
+  });
+
   return (
     <Box paddingBlockEnd="800">
+      {/* 🚀 THE FIX: Global SVG override specifically protecting Recharts from Polaris */}
+      <style>
+        {`
+          @keyframes scrollTicker {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+          }
+          
+          /* Override Shopify Polaris 20px SVG rule for Recharts elements */
+          .recharts-wrapper svg,
+          .recharts-surface {
+            max-width: none !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+        `}
+      </style>
+
       <Layout>
         {/* --- SMART REVIEW NUDGE --- */}
         {shouldShowReviewNudge && (
@@ -276,16 +324,9 @@ export function RevenueSuiteTab({
             </Banner>
           </Box>
         )}
+
         {recentChecks && recentChecks.length > 0 && (
           <Box>
-            <style>
-              {`
-                    @keyframes scrollTicker {
-                      0% { transform: translateX(100%); }
-                      100% { transform: translateX(-100%); }
-                    }
-                  `}
-            </style>
             <div
               style={{
                 backgroundColor: "var(--p-color-bg-surface-magic)",
@@ -343,6 +384,7 @@ export function RevenueSuiteTab({
             </div>
           </Box>
         )}
+
         <Layout.Section>
           <BlockStack gap="400">
             {/* AI AGENT STATUS CARD */}
@@ -364,7 +406,6 @@ export function RevenueSuiteTab({
                   <Divider />
 
                   <Box>
-                    {/* 🚀 FIX: Used InlineGrid to allocate exactly 2x width to the mission description */}
                     <div
                       style={{
                         display: "grid",
@@ -433,7 +474,6 @@ export function RevenueSuiteTab({
                     </Banner>
                   ) : null}
 
-                  {/* 🚀 FIX: Placed text and button in a flex container so the button sits aligned to the right */}
                   <InlineStack
                     align="space-between"
                     blockAlign="center"
@@ -569,6 +609,393 @@ export function RevenueSuiteTab({
               </Card>
             </div>
 
+            {/* 🚀 Premium 30-Day Revenue Area Chart */}
+            {totalRevenue > 0 && (
+              <Card>
+                <BlockStack gap="400">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <InlineStack gap="300" blockAlign="center">
+                      <Icon source={ChartVerticalIcon} tone="success" />
+                      <Text as="h2" variant="headingMd">
+                        30-Day Revenue Impact (Recovered vs. Missed)
+                      </Text>
+                    </InlineStack>
+                  </InlineStack>
+
+                  <div
+                    style={{
+                      height: 280,
+                      width: "100%",
+                      minWidth: 0,
+                      marginTop: "16px",
+                    }}
+                  >
+                    {isChartMounted ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={revenueChartData}
+                          margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient
+                              id="colorRecovered"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="5%"
+                                stopColor="#008060"
+                                stopOpacity={0.6}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor="#008060"
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+                            <linearGradient
+                              id="colorMissed"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="5%"
+                                stopColor="#d82c0d"
+                                stopOpacity={0.15}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor="#d82c0d"
+                                stopOpacity={0}
+                              />
+                            </linearGradient>
+                          </defs>
+
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke="#e1e3e5"
+                          />
+
+                          <XAxis
+                            dataKey="date"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#6d7175", fontSize: 11 }}
+                            dy={10}
+                            minTickGap={30}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: "#6d7175", fontSize: 11 }}
+                            tickFormatter={(val) => `$${val}`}
+                          />
+
+                          <Tooltip
+                            contentStyle={{
+                              borderRadius: "8px",
+                              border: "1px solid #c9cccf",
+                              boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+                              backgroundColor: "#ffffff",
+                            }}
+                            formatter={(value: any, name: any) => {
+                              const formattedValue = `$${Number(value || 0).toFixed(2)}`;
+                              const safeName = String(name || "");
+                              const label =
+                                safeName.charAt(0).toUpperCase() +
+                                safeName.slice(1);
+                              return [formattedValue, label];
+                            }}
+                            labelStyle={{
+                              color: "#6d7175",
+                              marginBottom: "8px",
+                              fontWeight: "bold",
+                            }}
+                          />
+
+                          <Area
+                            type="monotone"
+                            dataKey="missed"
+                            name="missed"
+                            stroke="#d82c0d"
+                            strokeWidth={2}
+                            strokeOpacity={0.4}
+                            fillOpacity={1}
+                            fill="url(#colorMissed)"
+                            activeDot={false}
+                            isAnimationActive={false}
+                          />
+
+                          <Area
+                            type="monotone"
+                            dataKey="recovered"
+                            name="recovered"
+                            stroke="#008060"
+                            strokeWidth={3}
+                            fillOpacity={1}
+                            fill="url(#colorRecovered)"
+                            activeDot={{
+                              r: 6,
+                              fill: "#ffffff",
+                              stroke: "#008060",
+                              strokeWidth: 2,
+                            }}
+                            isAnimationActive={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div
+                        style={{
+                          height: "100%",
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text as="span" tone="subdued">
+                          Loading chart...
+                        </Text>
+                      </div>
+                    )}
+                  </div>
+                </BlockStack>
+              </Card>
+            )}
+
+            {/* 🚀 Advanced Insights Row (Funnel & Heatmap) */}
+            {((funnelData && funnelData.length > 0) ||
+              (heatmapData && heatmapData.length > 0)) && (
+              <InlineGrid columns={2} gap="400">
+                <Card>
+                  <BlockStack gap="400">
+                    <Text as="h2" variant="headingMd">
+                      Local Conversion Funnel
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Identify where local customers drop off to optimize
+                      pricing.
+                    </Text>
+
+                    <div style={{ height: 260, width: "100%", minWidth: 0 }}>
+                      {isChartMounted ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={processedFunnelData}
+                            layout="vertical"
+                            margin={{ top: 0, right: 30, left: 10, bottom: 0 }}
+                          >
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              horizontal={true}
+                              vertical={false}
+                              stroke="#e1e3e5"
+                            />
+                            <XAxis type="number" hide />
+                            <YAxis
+                              dataKey="name"
+                              type="category"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{
+                                fill: "#202223",
+                                fontSize: 12,
+                                fontWeight: "bold",
+                              }}
+                              width={110}
+                            />
+                            <Tooltip
+                              cursor={{ fill: "#f4f6f8" }}
+                              contentStyle={{
+                                borderRadius: "8px",
+                                border: "1px solid #c9cccf",
+                                backgroundColor: "#ffffff",
+                              }}
+                              formatter={(value: any) => [
+                                Number(value || 0).toLocaleString(),
+                                "Count",
+                              ]}
+                            />
+                            <Bar
+                              dataKey="value"
+                              radius={[0, 4, 4, 0]}
+                              barSize={32}
+                              isAnimationActive={false}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div
+                          style={{
+                            height: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Text as="span" tone="subdued">
+                            Loading funnel...
+                          </Text>
+                        </div>
+                      )}
+                    </div>
+                  </BlockStack>
+                </Card>
+
+                <Card>
+                  <BlockStack gap="400">
+                    <Text as="h2" variant="headingMd">
+                      Delivery Demand Heatmap
+                    </Text>
+                    <Text as="p" variant="bodySm" tone="subdued">
+                      Days and times when local customers check delivery.
+                    </Text>
+
+                    <div style={{ height: 260, width: "100%", minWidth: 0 }}>
+                      {isChartMounted ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ScatterChart
+                            margin={{
+                              top: 10,
+                              right: 10,
+                              bottom: 10,
+                              left: -20,
+                            }}
+                          >
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              stroke="#e1e3e5"
+                            />
+                            <XAxis
+                              type="number"
+                              dataKey="hourIndex"
+                              name="Hour"
+                              domain={[0, 23]}
+                              tickCount={12}
+                              tickLine={false}
+                              axisLine={false}
+                              tickFormatter={(val) =>
+                                `${val % 12 === 0 ? 12 : val % 12}${val >= 12 ? "p" : "a"}`
+                              }
+                              tick={{ fill: "#6d7175", fontSize: 11 }}
+                            />
+                            <YAxis
+                              type="number"
+                              dataKey="dayIndex"
+                              name="Day"
+                              domain={[0, 6]}
+                              tickCount={7}
+                              reversed
+                              tickLine={false}
+                              axisLine={false}
+                              tickFormatter={(val) =>
+                                [
+                                  "Sun",
+                                  "Mon",
+                                  "Tue",
+                                  "Wed",
+                                  "Thu",
+                                  "Fri",
+                                  "Sat",
+                                ][val] || ""
+                              }
+                              tick={{
+                                fill: "#202223",
+                                fontSize: 12,
+                                fontWeight: "bold",
+                              }}
+                            />
+                            <ZAxis
+                              type="number"
+                              dataKey="value"
+                              range={[30, 250]}
+                              name="Checks"
+                            />
+                            <Tooltip
+                              cursor={{
+                                strokeDasharray: "3 3",
+                                stroke: "#c9cccf",
+                              }}
+                              contentStyle={{
+                                borderRadius: "8px",
+                                border: "1px solid #c9cccf",
+                                backgroundColor: "#ffffff",
+                              }}
+                              formatter={(value: any, name: any) => {
+                                if (name === "Checks")
+                                  return [value, "Total Checks"];
+                                return [value, name];
+                              }}
+                              labelFormatter={() => ""}
+                              content={({ payload }) => {
+                                if (payload && payload.length > 0) {
+                                  const data = payload[0].payload;
+                                  return (
+                                    <div
+                                      style={{
+                                        backgroundColor: "#ffffff",
+                                        padding: "8px",
+                                        border: "1px solid #c9cccf",
+                                        borderRadius: "8px",
+                                        boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                                      }}
+                                    >
+                                      <Text
+                                        as="p"
+                                        variant="bodySm"
+                                        fontWeight="bold"
+                                      >
+                                        {data.dayName} at {data.hourLabel}
+                                      </Text>
+                                      <div
+                                        style={{
+                                          color: "#9e52fa",
+                                          marginTop: "2px",
+                                          fontSize: "13px",
+                                        }}
+                                      >
+                                        {data.value} Delivery Checks
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              }}
+                            />
+                            <Scatter
+                              data={heatmapData}
+                              fill="#9e52fa"
+                              fillOpacity={0.8}
+                              isAnimationActive={false}
+                            />
+                          </ScatterChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div
+                          style={{
+                            height: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Text as="span" tone="subdued">
+                            Loading heatmap...
+                          </Text>
+                        </div>
+                      )}
+                    </div>
+                  </BlockStack>
+                </Card>
+              </InlineGrid>
+            )}
+
             {/* STAT BOXES */}
             <Card>
               <BlockStack gap="500">
@@ -590,7 +1017,7 @@ export function RevenueSuiteTab({
                     </Button>
                   )}
                 </InlineStack>
-                {/* 🚀 FIX: Used InlineGrid with 4 columns to stretch the boxes equally and eliminate right-side whitespace */}
+
                 <InlineGrid columns={4} gap="400">
                   <StatBox
                     label="Delivery Checks Today"
@@ -648,7 +1075,11 @@ export function RevenueSuiteTab({
                     position={index}
                   >
                     <IndexTable.Cell>
-                      {new Date(conv.createdAt).toLocaleTimeString()}
+                      <span suppressHydrationWarning>
+                        {isChartMounted
+                          ? new Date(conv.createdAt).toLocaleTimeString()
+                          : new Date(conv.createdAt).toLocaleDateString()}
+                      </span>
                     </IndexTable.Cell>
                     <IndexTable.Cell>
                       {conv.orderId?.split("/").pop() || "N/A"}
@@ -980,9 +1411,8 @@ function StatBox({ label, value, icon, tone, color }: any) {
       background="bg-surface-secondary"
       padding="500"
       borderRadius="300"
-      width="100%" /* 🚀 FIX: Removed fixed width to let InlineGrid stretch this naturally */
+      width="100%"
     >
-      {/* 🚀 FIX: Changed to inlineAlign="center" for proper horizontal centering inside BlockStack */}
       <BlockStack gap="200" inlineAlign="center">
         <div style={{ display: "flex", justifyContent: "center" }}>
           <Box width="20px" minHeight="20px">

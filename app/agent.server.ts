@@ -218,8 +218,8 @@ export async function runCartRecoveryAgent(shop?: string) {
               { role: "system", content: SYSTEM_PROMPT },
               { role: "user", content: USER_PROMPT },
             ],
-            max_tokens: 250, // Hard ceiling
-            temperature: 0.6, // Lowered for less hallucination
+            max_tokens: 250,
+            temperature: 0.6,
           });
 
           let generatedEmailBody =
@@ -258,7 +258,7 @@ export async function runCartRecoveryAgent(shop?: string) {
             );
           }
 
-          // 🚀 CRITICAL FIX 1: The Cross-Device Persistent Cart Link
+          // 🚀 The Cross-Device Persistent Cart Link
           // We use abandonedCheckoutUrl if it exists, otherwise fallback to the generic /cart
           const cartUrl =
             cart.abandonedCheckoutUrl || `https://${cart.shop}/cart`;

@@ -209,6 +209,128 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
+  // 🚀 30-Day "Revenue Lifeline" Data (Missed vs Recovered)
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+  thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+  // 1. Fetch Recovered (The Green Line)
+  const recoveredData = await prisma.conversionEvent.findMany({
+    where: { shop, createdAt: { gte: thirtyDaysAgo } },
+    select: { orderValue: true, createdAt: true },
+  });
+
+  // 2. Fetch Missed (The Grey/Red Line)
+  const missedData = await prisma.cartRecovery.findMany({
+    where: {
+      shop,
+      createdAt: { gte: thirtyDaysAgo },
+      recovered: false, // Only count carts that actually stayed abandoned
+    },
+    select: { cartValue: true, createdAt: true },
+  });
+
+  // 3. Map the last 30 days safely
+  const chartDataMap = new Map();
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(thirtyDaysAgo);
+    d.setDate(d.getDate() + i);
+    // Use short format for X-Axis to prevent crowding (e.g., "Mar 12")
+    const dateStr = d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    chartDataMap.set(dateStr, { date: dateStr, recovered: 0, missed: 0 });
+  }
+
+  // Populate Recovered
+  recoveredData.forEach((conv) => {
+    const dateStr = new Date(conv.createdAt).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    if (chartDataMap.has(dateStr)) {
+      chartDataMap.get(dateStr).recovered += conv.orderValue;
+    }
+  });
+
+  // Populate Missed
+  missedData.forEach((cart) => {
+    const dateStr = new Date(cart.createdAt).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    if (chartDataMap.has(dateStr)) {
+      // Fallback to 0 if cartValue is somehow null
+      chartDataMap.get(dateStr).missed += cart.cartValue || 0;
+    }
+  });
+
+  const revenueChartData = Array.from(chartDataMap.values());
+
+  // 🚀 Local Funnel Data
+  const totalChecks = await prisma.deliveryCheck.count({ where: { shop } });
+  const totalCarts = await prisma.revenueLeak.count({ where: { shop } });
+
+  const funnelData = [
+    {
+      name: "Widget Views",
+      value: totalViews,
+      fill: "var(--p-color-bg-surface-secondary-active)",
+    },
+    {
+      name: "Delivery Checks",
+      value: totalChecks,
+      fill: "var(--p-color-text-magic)",
+    },
+    {
+      name: "Carts Created",
+      value: totalCarts,
+      fill: "var(--p-color-text-warning)",
+    },
+    {
+      name: "Local Orders",
+      value: conversionCount,
+      fill: "var(--p-color-text-success)",
+    },
+  ];
+
+  // 🚀 Time-of-Day Heatmap Data (Last 30 Days)
+  const heatmapChecks = await prisma.deliveryCheck.findMany({
+    where: { shop, timestamp: { gte: thirtyDaysAgo } },
+    select: { timestamp: true },
+  });
+
+  const heatmapMap = new Map();
+  heatmapChecks.forEach((check) => {
+    const d = new Date(check.timestamp);
+    const day = d.getDay(); // 0 (Sun) to 6 (Sat)
+    const hour = d.getHours(); // 0 to 23
+    const key = `${day}-${hour}`;
+    heatmapMap.set(key, (heatmapMap.get(key) || 0) + 1);
+  });
+
+  const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const heatmapData: any[] = [];
+
+  heatmapMap.forEach((count, key) => {
+    const [dayStr, hourStr] = key.split("-");
+    const dayIndex = parseInt(dayStr);
+    const hourIndex = parseInt(hourStr);
+
+    // Formatting the hour (e.g., 14 -> "2 PM")
+    const period = hourIndex >= 12 ? "PM" : "AM";
+    const displayHour = hourIndex % 12 === 0 ? 12 : hourIndex % 12;
+
+    heatmapData.push({
+      dayIndex,
+      dayName: daysOfWeek[dayIndex],
+      hourIndex,
+      hourLabel: `${displayHour} ${period}`,
+      value: count,
+    });
+  });
+
   return json({
     settings,
     shop,
@@ -223,7 +345,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recentConversions,
     recentChecks,
     pendingRecoveries,
+    revenueChartData,
     dailyGoal,
+    funnelData,
+    heatmapData,
     goalProgress: Math.min(goalProgress, 100).toFixed(0),
     isBasic,
     isPro,
@@ -578,6 +703,9 @@ export default function Index() {
             recentConversions={data.recentConversions}
             recentChecks={data.recentChecks}
             pendingRecoveries={data.pendingRecoveries}
+            revenueChartData={data.revenueChartData}
+            funnelData={data.funnelData}
+            heatmapData={data.heatmapData}
             shop={data.shop}
             onResetData={onResetData}
             isPro={data.isPro || data.isElite}
