@@ -9,7 +9,7 @@ import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { BASIC_PLANS, PRO_PLANS, ELITE_PLANS } from "../constants";
 
-// 👇 1. Reusable Security Guard
+// 👇 Reusable Security Guard
 function authenticateCron(request: Request) {
   const authHeader = request.headers.get("Authorization");
   const rawSecret = process.env.CRON_SECRET || "UNDEFINED_SECRET";
@@ -22,7 +22,16 @@ function authenticateCron(request: Request) {
   return true;
 }
 
-// 👇 2. The Core Cron Logic
+// 🚀 THE FIX: Helper to chunk arrays for controlled processing
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunked = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunked.push(array.slice(i, i + size));
+  }
+  return chunked;
+}
+
+// 👇 The Core Cron Logic
 async function executeCartRecoveryCycle() {
   console.log("⏱️ Starting App-Wide Cart Recovery Cycle...");
 
@@ -37,25 +46,30 @@ async function executeCartRecoveryCycle() {
       return json({ success: true, message: "No active shops." });
     }
 
-    // 🚀 CRITICAL FIX: Asynchronous Batching Across Shops
-    await Promise.allSettled(
-      activeShops.map(async ({ shop }) => {
-        console.log(`\n🔄 Processing Shop: ${shop}`);
-        try {
-          // --- 🛑 SECURE REVENUE & FREELOADER CHECK ---
-          const startOfMonth = new Date();
-          startOfMonth.setDate(1);
-          startOfMonth.setHours(0, 0, 0, 0);
+    // 🚀 THE FIX: Process in batches of 5 to protect RAM and API Rate Limits
+    const BATCH_SIZE = 5;
+    const batches = chunkArray(activeShops, BATCH_SIZE);
 
-          const currentMonthData = await db.conversionEvent.aggregate({
-            where: { shop, createdAt: { gte: startOfMonth } },
-            _sum: { orderValue: true },
-          });
-          const currentMonthRevenue = currentMonthData._sum?.orderValue || 0;
+    for (let i = 0; i < batches.length; i++) {
+      console.log(`\n📦 Processing Batch ${i + 1} of ${batches.length}...`);
+      const currentBatch = batches[i];
 
-          // If revenue exceeds the lowest tier limit ($1000), we must verify their actual plan
-          if (currentMonthRevenue >= 1000) {
-            // Fetch offline admin context to query live billing status
+      await Promise.allSettled(
+        currentBatch.map(async ({ shop }) => {
+          console.log(`🔄 Checking Shop: ${shop}`);
+          try {
+            // --- 🛑 SECURE REVENUE & FREELOADER CHECK ---
+            const startOfMonth = new Date();
+            startOfMonth.setDate(1);
+            startOfMonth.setHours(0, 0, 0, 0);
+
+            const currentMonthData = await db.conversionEvent.aggregate({
+              where: { shop, createdAt: { gte: startOfMonth } },
+              _sum: { orderValue: true },
+            });
+            const currentMonthRevenue = currentMonthData._sum?.orderValue || 0;
+
+            // Fetch offline admin context to query live billing status FIRST
             const { admin } = await unauthenticated.admin(shop);
             const response = await admin.graphql(`
               #graphql
@@ -79,79 +93,82 @@ async function executeCartRecoveryCycle() {
             const isPro = PRO_PLANS.includes(planName);
             const isElite = ELITE_PLANS.includes(planName);
 
-            // 🛑 Hard Enforce Billing Limits
+            // 🛑 Hard Enforce Billing Limits & Active Subscriptions
+            if (!isBasic && !isPro && !isElite) {
+              console.warn(
+                `🛑 [NO VALID PLAN] Shop ${shop} has no active paid plan. AI Agent paused.`,
+              );
+              return; // Completely blocks freeloading
+            }
             if (isBasic && currentMonthRevenue >= 1000) {
               console.warn(
                 `🛑 [LIMIT REACHED] Shop ${shop} is on Basic Plan but hit $${currentMonthRevenue.toFixed(2)}. AI Agent paused.`,
               );
-              return; // Halt execution for this shop
+              return;
             }
             if (isPro && currentMonthRevenue >= 5000) {
               console.warn(
                 `🛑 [LIMIT REACHED] Shop ${shop} is on Pro Plan but hit $${currentMonthRevenue.toFixed(2)}. AI Agent paused.`,
               );
-              return; // Halt execution for this shop
+              return;
             }
-            if (!isBasic && !isPro && !isElite) {
-              console.warn(
-                `🛑 [NO VALID PLAN] Shop ${shop} has no active paid plan but hit $${currentMonthRevenue.toFixed(2)}. AI Agent paused.`,
-              );
-              return; // Prevent execution if they uninstalled or canceled billing
-            }
-          }
 
-          // Autonomous A/B Test Resolution
-          const settings = await db.appSettings.findUnique({ where: { shop } });
-
-          if (settings?.abTestEnabled) {
-            // Fetch recoveries that were part of the A/B test
-            const abRecoveries = await db.cartRecovery.findMany({
-              where: { shop, messageVariant: { not: null } },
+            // --- Autonomous A/B Test Resolution ---
+            const settings = await db.appSettings.findUnique({
+              where: { shop },
             });
 
-            const sendsA = abRecoveries.filter(
-              (r) => r.messageVariant === "A",
-            ).length;
-            const sendsB = abRecoveries.filter(
-              (r) => r.messageVariant === "B",
-            ).length;
-
-            // Resolve the test automatically after 50 sends for statistical significance
-            if (sendsA + sendsB >= 50) {
-              const winsA = abRecoveries.filter(
-                (r) => r.messageVariant === "A" && r.recovered,
-              ).length;
-              const winsB = abRecoveries.filter(
-                (r) => r.messageVariant === "B" && r.recovered,
-              ).length;
-
-              const crA = sendsA > 0 ? winsA / sendsA : 0;
-              const crB = sendsB > 0 ? winsB / sendsB : 0;
-
-              // The math decides the winner
-              const winner = crA >= crB ? "A" : "B";
-
-              await db.appSettings.update({
-                where: { shop },
-                data: {
-                  abTestEnabled: false,
-                  abTestWinner: winner,
-                },
+            if (settings?.abTestEnabled) {
+              const abRecoveries = await db.cartRecovery.findMany({
+                where: { shop, messageVariant: { not: null } },
               });
-              console.log(
-                `🏆 [A/B TEST RESOLVED] Shop ${shop} test concluded. Winner is Variant ${winner}!`,
-              );
-            }
-          }
 
-          // 🚀 EXECUTION (Only reached if limits aren't exceeded)
-          await processAbandonedCarts(shop);
-          await runCartRecoveryAgent(shop);
-        } catch (shopError) {
-          console.error(`❌ Failed processing shop ${shop}:`, shopError);
-        }
-      }),
-    );
+              const sendsA = abRecoveries.filter(
+                (r) => r.messageVariant === "A",
+              ).length;
+              const sendsB = abRecoveries.filter(
+                (r) => r.messageVariant === "B",
+              ).length;
+
+              if (sendsA + sendsB >= 50) {
+                const winsA = abRecoveries.filter(
+                  (r) => r.messageVariant === "A" && r.recovered,
+                ).length;
+                const winsB = abRecoveries.filter(
+                  (r) => r.messageVariant === "B" && r.recovered,
+                ).length;
+
+                const crA = sendsA > 0 ? winsA / sendsA : 0;
+                const crB = sendsB > 0 ? winsB / sendsB : 0;
+                const winner = crA >= crB ? "A" : "B";
+
+                await db.appSettings.update({
+                  where: { shop },
+                  data: {
+                    abTestEnabled: false,
+                    abTestWinner: winner,
+                  },
+                });
+                console.log(
+                  `🏆 [A/B TEST RESOLVED] Shop ${shop} test concluded. Winner is Variant ${winner}!`,
+                );
+              }
+            }
+
+            // 🚀 EXECUTION (Only reached if limits aren't exceeded)
+            await processAbandonedCarts(shop);
+            await runCartRecoveryAgent(shop);
+          } catch (shopError) {
+            console.error(`❌ Failed processing shop ${shop}:`, shopError);
+          }
+        }),
+      );
+
+      // 🚀 THE FIX: Let the server breathe for 1 second between batches
+      if (i < batches.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
 
     return json(
       {
@@ -169,18 +186,14 @@ async function executeCartRecoveryCycle() {
   }
 }
 
-// 👇 3. Support GET requests
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  if (!authenticateCron(request)) {
+  if (!authenticateCron(request))
     return json({ error: "Unauthorized" }, { status: 401 });
-  }
   return executeCartRecoveryCycle();
 };
 
-// 👇 4. Support POST requests
 export const action = async ({ request }: ActionFunctionArgs) => {
-  if (!authenticateCron(request)) {
+  if (!authenticateCron(request))
     return json({ error: "Unauthorized" }, { status: 401 });
-  }
   return executeCartRecoveryCycle();
 };
