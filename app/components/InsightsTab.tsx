@@ -15,7 +15,7 @@ import {
   DataTable,
   Banner,
 } from "@shopify/polaris";
-import { ChartVerticalIcon } from "@shopify/polaris-icons";
+import { ChartVerticalIcon, LocationIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "@remix-run/react";
 import {
   BarChart,
@@ -27,17 +27,24 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+// 🚀 THE FIX: TypeScript Interface rigorously tracks the new variables
 interface InsightsTabProps {
   isPro: boolean;
   trendingProducts: any[];
   recentConversions: any[];
-  // 🚀 FIX: Added 'organic' to the TypeScript definition
   attributionChartData?: {
     date: string;
     badge: number;
     recovery: number;
     organic: number;
   }[];
+  abandonedZones?: {
+    zone: string;
+    count: number;
+    maxDistance: number;
+    lostRevenue: number;
+  }[];
+  currentRadius?: number;
   stats: {
     totalRevenue: number;
     totalOrders: number;
@@ -63,6 +70,8 @@ export function InsightsTab({
   trendingProducts,
   recentConversions,
   attributionChartData = [],
+  abandonedZones = [],
+  currentRadius = 10,
   stats,
 }: InsightsTabProps) {
   const navigate = useNavigate();
@@ -124,7 +133,6 @@ export function InsightsTab({
     <BlockStack gap="400">
       <style>
         {`
-          /* Override Shopify Polaris 20px SVG rule for Recharts elements */
           .recharts-wrapper svg,
           .recharts-surface {
             max-width: none !important;
@@ -134,7 +142,7 @@ export function InsightsTab({
         `}
       </style>
 
-      {/* The Proof Banner */}
+      {/* Undeniable Proof Banner */}
       {stats.liftPercentage > 0 && (
         <Banner tone="success" title="Incrementality Proven 💰">
           <Text as="p" variant="bodyMd">
@@ -209,100 +217,86 @@ export function InsightsTab({
 
               <div
                 style={{
-                  height: 320,
+                  height: "320px",
+                  minHeight: "320px",
                   width: "100%",
                   minWidth: 0,
-                  position: "relative",
                 }}
               >
-                {isChartMounted && attributionChartData.length > 0 ? (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                    }}
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={attributionChartData}
-                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                          stroke="#e1e3e5"
-                        />
-                        <XAxis
-                          dataKey="date"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: "#6d7175", fontSize: 11 }}
-                          dy={10}
-                          minTickGap={30}
-                        />
-                        <YAxis
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fill: "#6d7175", fontSize: 11 }}
-                          tickFormatter={(val) => `$${val}`}
-                        />
-                        <Tooltip
-                          cursor={{ fill: "#f4f6f8" }}
-                          contentStyle={{
-                            borderRadius: "8px",
-                            border: "1px solid #c9cccf",
-                            backgroundColor: "#ffffff",
-                            boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
-                          }}
-                          formatter={(value: any, name: any) => {
-                            const formattedValue = `$${Number(value || 0).toFixed(2)}`;
-
-                            // 🚀 THE FIX: Explicitly assign labels for all 3 categories
-                            let label = "Organic";
-                            if (name === "badge") {
-                              label = "Delivery Badge";
-                            } else if (name === "recovery") {
-                              label = "AI Cart Recovery";
-                            }
-
-                            return [formattedValue, label];
-                          }}
-                          labelStyle={{
-                            color: "#202223",
-                            fontWeight: "bold",
-                            marginBottom: "8px",
-                          }}
-                        />
-                        <Bar
-                          dataKey="organic"
-                          name="organic"
-                          stackId="a"
-                          fill="#e1e3e5"
-                          radius={[0, 0, 0, 0]}
-                          isAnimationActive={false}
-                        />
-                        <Bar
-                          dataKey="badge"
-                          name="badge"
-                          stackId="a"
-                          fill="#008060"
-                          radius={[0, 0, 0, 0]}
-                          isAnimationActive={false}
-                        />
-                        <Bar
-                          dataKey="recovery"
-                          name="recovery"
-                          stackId="a"
-                          fill="#9e52fa"
-                          radius={[4, 4, 0, 0]}
-                          isAnimationActive={false}
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                {isChartMounted &&
+                attributionChartData &&
+                attributionChartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={attributionChartData}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="#e1e3e5"
+                      />
+                      <XAxis
+                        dataKey="date"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: "#6d7175", fontSize: 11 }}
+                        dy={10}
+                        minTickGap={30}
+                      />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: "#6d7175", fontSize: 11 }}
+                        tickFormatter={(val) => `$${val}`}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "#f4f6f8" }}
+                        contentStyle={{
+                          borderRadius: "8px",
+                          border: "1px solid #c9cccf",
+                          backgroundColor: "#ffffff",
+                          boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+                        }}
+                        formatter={(value: any, name: any) => {
+                          const formattedValue = `$${Number(value || 0).toFixed(2)}`;
+                          let label = "Organic";
+                          if (name === "badge") {
+                            label = "Delivery Badge";
+                          } else if (name === "recovery") {
+                            label = "AI Cart Recovery";
+                          }
+                          return [formattedValue, label];
+                        }}
+                        labelStyle={{
+                          color: "#202223",
+                          fontWeight: "bold",
+                          marginBottom: "8px",
+                        }}
+                      />
+                      <Bar
+                        dataKey="organic"
+                        name="organic"
+                        stackId="a"
+                        fill="#e1e3e5"
+                        radius={[0, 0, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="badge"
+                        name="badge"
+                        stackId="a"
+                        fill="#008060"
+                        radius={[0, 0, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="recovery"
+                        name="recovery"
+                        stackId="a"
+                        fill="#9e52fa"
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
                 ) : (
                   <div
                     style={{
@@ -348,8 +342,91 @@ export function InsightsTab({
           </Card>
         </Layout.Section>
 
-        {/* TRENDING PRODUCTS TABLE */}
+        {/* 🚀 NEW FEATURE: Missed Revenue Hotspots (The Consultant) */}
         <Layout.Section variant="oneHalf">
+          <Card>
+            <BlockStack gap="400">
+              <InlineStack align="space-between" blockAlign="center">
+                <InlineStack gap="200">
+                  <Icon source={LocationIcon} tone="base" />
+                  <Text variant="headingMd" as="h2">
+                    Missed Revenue Hotspots
+                  </Text>
+                </InlineStack>
+                <Badge tone="warning">Actionable Insight</Badge>
+              </InlineStack>
+              <Divider />
+
+              {abandonedZones && abandonedZones.length > 0 ? (
+                <BlockStack gap="400">
+                  <Banner tone="info" title="SwiftFlow Growth Consultant">
+                    <Text as="p">
+                      You are losing approximately{" "}
+                      <strong>
+                        ${abandonedZones[0].lostRevenue.toFixed(0)}/mo
+                      </strong>{" "}
+                      from customers in{" "}
+                      <strong>{abandonedZones[0].zone}</strong>. Expand your
+                      delivery radius by{" "}
+                      <strong>
+                        {Math.max(
+                          0.5,
+                          Math.ceil(
+                            abandonedZones[0].maxDistance - currentRadius,
+                          ),
+                        )}{" "}
+                        miles
+                      </strong>{" "}
+                      to capture this revenue.
+                    </Text>
+                  </Banner>
+
+                  <IndexTable
+                    resourceName={{ singular: "zone", plural: "zones" }}
+                    itemCount={abandonedZones.length}
+                    headings={[
+                      { title: "Neighborhood" },
+                      { title: "Missed Carts" },
+                      { title: "Lost Revenue", alignment: "end" },
+                    ]}
+                    selectable={false}
+                  >
+                    {abandonedZones.map((zone: any, index: number) => (
+                      <IndexTable.Row
+                        id={zone.zone}
+                        key={index}
+                        position={index}
+                      >
+                        <IndexTable.Cell>
+                          <Text as="span" fontWeight="bold">
+                            {zone.zone}
+                          </Text>
+                        </IndexTable.Cell>
+                        <IndexTable.Cell>{zone.count}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          <div style={{ textAlign: "right" }}>
+                            <Text as="span" tone="critical" fontWeight="bold">
+                              -${zone.lostRevenue.toFixed(2)}
+                            </Text>
+                          </div>
+                        </IndexTable.Cell>
+                      </IndexTable.Row>
+                    ))}
+                  </IndexTable>
+                </BlockStack>
+              ) : (
+                <EmptyState heading="No missed zones detected" image="">
+                  <p>
+                    Your current delivery radius is capturing all local demand!
+                  </p>
+                </EmptyState>
+              )}
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
+        {/* TRENDING PRODUCTS TABLE */}
+        <Layout.Section>
           <Box paddingBlockEnd="800">
             <Card>
               <BlockStack gap="400">
@@ -402,7 +479,7 @@ export function InsightsTab({
                         </IndexTable.Cell>
                         <IndexTable.Cell>
                           <div
-                            style={{ maxWidth: "120px", whiteSpace: "normal" }}
+                            style={{ maxWidth: "200px", whiteSpace: "normal" }}
                           >
                             <Text as="span" fontWeight="bold" breakWord>
                               {product.title}

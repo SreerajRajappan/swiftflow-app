@@ -56,7 +56,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   let settings = await prisma.appSettings.findUnique({ where: { shop } });
 
-  // Safety net: Ensure settings exist if this is the very first load
   if (!settings) {
     settings = await prisma.appSettings.create({
       data: { shop },
@@ -70,15 +69,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     _count: { id: true },
   });
 
-  // 1. All-time revenue for the Stat Box
   const totalRevenue = conversionData._sum.orderValue || 0;
   const conversionCount = conversionData._count.id || 0;
 
-  // 2. Calculate Today's Revenue for the Daily Goal
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  // Push all calculation to the database engine
   const todaysConversions = await prisma.conversionEvent.aggregate({
     where: {
       shop,
@@ -89,7 +85,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const todayRevenue = todaysConversions._sum.orderValue || 0;
 
-  // 🚀 Query today's active delivery checks
   const todayChecks = await prisma.deliveryCheck.count({
     where: {
       shop,
@@ -97,7 +92,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
-  // 3. Calculate Monthly Revenue (For Billing Enforcement)
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
@@ -108,11 +102,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
   const currentMonthRevenue = currentMonthData._sum.orderValue || 0;
 
-  // Dynamic Limit Checks
   const hasReachedBasicLimit = isBasic && currentMonthRevenue >= 1000;
   const hasReachedProLimit = isPro && currentMonthRevenue >= 5000;
 
-  // 4. Get the Daily Goal
   const dailyGoal = settings?.dailyGoal || 500;
   const goalProgress = dailyGoal > 0 ? (todayRevenue / dailyGoal) * 100 : 0;
 
@@ -125,11 +117,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 5,
   });
 
-  // 🚀 Fetch data for Live Ticker and Manual Outreach
   const recentChecks = await prisma.deliveryCheck.findMany({
     where: { shop },
     orderBy: { timestamp: "desc" },
-    take: 5, // Get the 5 most recent checks for the ticker
+    take: 5,
   });
 
   const pendingRecoveries = await prisma.cartRecovery.findMany({
@@ -140,7 +131,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       abandonedCheckoutUrl: { not: null },
     },
     orderBy: { emailSentAt: "desc" },
-    take: 5, // Top 5 high-intent VIPs to manually text/email
+    take: 5,
   });
 
   const shopifyAdminName = shop.split(".")[0];
@@ -168,7 +159,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       title: "Activate Storefront Widgets (Required)",
       description:
         "Click below to open your Theme Editor. Simply drag the 'SwiftFlow Personalizer' block under your Buy Buttons and click Save.",
-      done: totalViews > 0, // Automatically marked done the second a customer loads the widget!
+      done: totalViews > 0,
       href: themeEditorUrl,
       cta: "Add widget to store (2 minutes)",
       isExternal: true,
@@ -190,15 +181,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     parseFloat(conversionRate),
   );
 
-  // --- VIRAL GROWTH ENGINE LOGIC ---
   let shouldShowReviewNudge = false;
 
-  // Only ask for a review if they have actually recovered money (the "Aha!" moment)
   if (!settings?.hasLeftReview && totalRevenue > 0) {
     if (!settings?.reviewDismissedAt) {
       shouldShowReviewNudge = true;
     } else {
-      // If they dismissed it, wait 7 days before asking again
       const daysSinceDismissed =
         (new Date().getTime() -
           new Date(settings.reviewDismissedAt).getTime()) /
@@ -209,33 +197,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  // 🚀 30-Day "Revenue Lifeline" Data (Missed vs Recovered)
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
   thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-  // 1. Fetch Recovered (The Green Line)
   const recoveredData = await prisma.conversionEvent.findMany({
     where: { shop, createdAt: { gte: thirtyDaysAgo } },
     select: { orderValue: true, createdAt: true },
   });
 
-  // 2. Fetch Missed (The Grey/Red Line)
   const missedData = await prisma.cartRecovery.findMany({
     where: {
       shop,
       createdAt: { gte: thirtyDaysAgo },
-      recovered: false, // Only count carts that actually stayed abandoned
+      recovered: false,
     },
     select: { cartValue: true, createdAt: true },
   });
 
-  // 3. Map the last 30 days safely
   const chartDataMap = new Map();
   for (let i = 0; i < 30; i++) {
     const d = new Date(thirtyDaysAgo);
     d.setDate(d.getDate() + i);
-    // Use short format for X-Axis to prevent crowding (e.g., "Mar 12")
     const dateStr = d.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -243,7 +226,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     chartDataMap.set(dateStr, { date: dateStr, recovered: 0, missed: 0 });
   }
 
-  // Populate Recovered
   recoveredData.forEach((conv) => {
     const dateStr = new Date(conv.createdAt).toLocaleDateString("en-US", {
       month: "short",
@@ -254,21 +236,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   });
 
-  // Populate Missed
   missedData.forEach((cart) => {
     const dateStr = new Date(cart.createdAt).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
     });
     if (chartDataMap.has(dateStr)) {
-      // Fallback to 0 if cartValue is somehow null
       chartDataMap.get(dateStr).missed += cart.cartValue || 0;
     }
   });
 
   const revenueChartData = Array.from(chartDataMap.values());
 
-  // 🚀 Local Funnel Data
   const totalChecks = await prisma.deliveryCheck.count({ where: { shop } });
   const totalCarts = await prisma.revenueLeak.count({ where: { shop } });
 
@@ -295,7 +274,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   ];
 
-  // 🚀 Time-of-Day Heatmap Data (Last 30 Days)
   const heatmapChecks = await prisma.deliveryCheck.findMany({
     where: { shop, timestamp: { gte: thirtyDaysAgo } },
     select: { timestamp: true },
@@ -304,8 +282,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const heatmapMap = new Map();
   heatmapChecks.forEach((check) => {
     const d = new Date(check.timestamp);
-    const day = d.getDay(); // 0 (Sun) to 6 (Sat)
-    const hour = d.getHours(); // 0 to 23
+    const day = d.getDay();
+    const hour = d.getHours();
     const key = `${day}-${hour}`;
     heatmapMap.set(key, (heatmapMap.get(key) || 0) + 1);
   });
@@ -318,7 +296,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const dayIndex = parseInt(dayStr);
     const hourIndex = parseInt(hourStr);
 
-    // Formatting the hour (e.g., 14 -> "2 PM")
     const period = hourIndex >= 12 ? "PM" : "AM";
     const displayHour = hourIndex % 12 === 0 ? 12 : hourIndex % 12;
 
@@ -405,11 +382,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       ELITE_PLANS.includes(activePlanName);
 
     const clientRequestedAbTest = formData.get("abTestEnabled") === "true";
-
     const abTestEnabled = isLegitimatelyPro ? clientRequestedAbTest : false;
-
     const abTestMessageA = formData.get("abTestMessageA") as string;
     const abTestMessageB = formData.get("abTestMessageB") as string;
+
+    // Extract Dynamic Pricing inputs from formData
+    const dynamicDiscountEnabled =
+      formData.get("dynamicDiscountEnabled") === "true";
+    const discountCartThreshold =
+      parseFloat(formData.get("discountCartThreshold") as string) || 100;
+    const discountDistance =
+      parseFloat(formData.get("discountDistance") as string) || 3;
+    const discountCode = formData.get("discountCode") as string;
 
     await prisma.appSettings.upsert({
       where: { shop },
@@ -421,6 +405,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         abTestEnabled,
         abTestMessageA,
         abTestMessageB,
+        dynamicDiscountEnabled,
+        discountCartThreshold,
+        discountDistance,
+        discountCode,
       },
       update: {
         recoveryEmailSubject: subject,
@@ -429,6 +417,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         abTestEnabled,
         abTestMessageA,
         abTestMessageB,
+        dynamicDiscountEnabled,
+        discountCartThreshold,
+        discountDistance,
+        discountCode,
       },
     });
 
@@ -501,7 +493,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (intent === "generate-referral") {
-    // Generate a simple 6-character alphanumeric code based on the shop name
     const rawCode =
       shop.split(".")[0].substring(0, 3) +
       Math.random().toString(36).substring(2, 5);
@@ -567,7 +558,6 @@ export default function Index() {
   }, [location.hash]);
 
   useEffect(() => {
-    // 1. Daily Goal Celebration
     const hasCelebratedToday = sessionStorage.getItem(
       `celebrated_${data.dailyGoal}`,
     );
@@ -581,7 +571,6 @@ export default function Index() {
       sessionStorage.removeItem(`celebrated_${data.dailyGoal}`);
     }
 
-    // 2. First Recovery Celebration
     const hasCelebratedFirstRecovery = localStorage.getItem(
       "celebrated_first_recovery",
     );
@@ -619,7 +608,6 @@ export default function Index() {
       <TitleBar title="SwiftFlow: Revenue Suite" />
 
       <BlockStack gap="400">
-        {/* 🚨 DYNAMIC LIMIT BANNERS 🚨 */}
         {data.hasReachedBasicLimit ? (
           <Banner
             title="Revenue Limit Reached: AI Agent Paused"
@@ -649,7 +637,6 @@ export default function Index() {
             </Text>
           </Banner>
         ) : data.isBasic ? (
-          /* 💡 DYNAMIC UPSELL BANNERS (Only show if not limited) 💡 */
           <Banner
             tone="info"
             action={{ content: "Upgrade to Pro", url: "/app/billing" }}
@@ -673,7 +660,6 @@ export default function Index() {
         ) : null}
 
         <Box paddingBlockStart={shouldAddPadding ? "200" : "0"}>
-          {/* Automatically hide if dismissed OR if all steps are complete */}
           {!data.onboardingDismissed &&
             !data.onboardingSteps.every((step) => step.done) && (
               <OnboardingChecklist

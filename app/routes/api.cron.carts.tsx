@@ -99,7 +99,50 @@ async function executeCartRecoveryCycle() {
               return; // Prevent execution if they uninstalled or canceled billing
             }
           }
-          // --- END FREELOADER CHECK ---
+
+          // Autonomous A/B Test Resolution
+          const settings = await db.appSettings.findUnique({ where: { shop } });
+
+          if (settings?.abTestEnabled) {
+            // Fetch recoveries that were part of the A/B test
+            const abRecoveries = await db.cartRecovery.findMany({
+              where: { shop, messageVariant: { not: null } },
+            });
+
+            const sendsA = abRecoveries.filter(
+              (r) => r.messageVariant === "A",
+            ).length;
+            const sendsB = abRecoveries.filter(
+              (r) => r.messageVariant === "B",
+            ).length;
+
+            // Resolve the test automatically after 50 sends for statistical significance
+            if (sendsA + sendsB >= 50) {
+              const winsA = abRecoveries.filter(
+                (r) => r.messageVariant === "A" && r.recovered,
+              ).length;
+              const winsB = abRecoveries.filter(
+                (r) => r.messageVariant === "B" && r.recovered,
+              ).length;
+
+              const crA = sendsA > 0 ? winsA / sendsA : 0;
+              const crB = sendsB > 0 ? winsB / sendsB : 0;
+
+              // The math decides the winner
+              const winner = crA >= crB ? "A" : "B";
+
+              await db.appSettings.update({
+                where: { shop },
+                data: {
+                  abTestEnabled: false,
+                  abTestWinner: winner,
+                },
+              });
+              console.log(
+                `🏆 [A/B TEST RESOLVED] Shop ${shop} test concluded. Winner is Variant ${winner}!`,
+              );
+            }
+          }
 
           // 🚀 EXECUTION (Only reached if limits aren't exceeded)
           await processAbandonedCarts(shop);

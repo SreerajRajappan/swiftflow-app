@@ -26,6 +26,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const isPro =
     PRO_PLANS.includes(activePlanName) || ELITE_PLANS.includes(activePlanName);
 
+  // 🚀 THE FIX: Fetch the settings so we can access deliveryRadius!
+  const settings = await prisma.appSettings.findUnique({ where: { shop } });
+
   // 1. Recent Conversions
   const recentConversions = await prisma.conversionEvent.findMany({
     where: { shop },
@@ -33,10 +36,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 5,
   });
 
-  // 🚀 Correctly calculate the 30-day window to INCLUDE TODAY
   const today = new Date();
   const thirtyDaysAgo = new Date(today);
-  thirtyDaysAgo.setDate(today.getDate() - 29); // Back 29 days + Today = 30 Days total
+  thirtyDaysAgo.setDate(today.getDate() - 29);
   thirtyDaysAgo.setHours(0, 0, 0, 0);
 
   const allConversions = await prisma.conversionEvent.findMany({
@@ -49,7 +51,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const recoveryConversions = allConversions.filter(
     (c) => c.source === "cart_recovery",
   );
-  // 🚀 Fetch the holdout control group conversions
   const controlConversions = allConversions.filter(
     (c) => c.source === "control_group",
   );
@@ -67,10 +68,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     (c) => c.recovered && c.recoveredAt && c.recoveredAt >= thirtyDaysAgo,
   );
 
-  // 🚀 THE FIX: A/B Test Math (Incrementality Lift)
+  // A/B Test Math (Incrementality Lift)
   const totalViews = await prisma.productView.count({ where: { shop } });
 
-  // Since we enforce a strict 90/10 split on the client, we derive views mathematically:
   const testViews = Math.floor(totalViews * 0.9);
   const controlViews = Math.ceil(totalViews * 0.1);
 
@@ -84,7 +84,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (controlCR > 0) {
     liftPercentage = ((testCR - controlCR) / controlCR) * 100;
   } else if (testCR > 0 && controlCR === 0) {
-    liftPercentage = 100; // Total dominance over control
+    liftPercentage = 100;
   }
 
   const advancedStats = {
@@ -102,12 +102,55 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recoveredCount: recovered.length,
     recoveredRevenue: recovered.reduce((s, c) => s + (c.recoveryValue ?? 0), 0),
     recoveryRate: emailsSent > 0 ? (recovered.length / emailsSent) * 100 : 0,
-
-    // 🚀 Pass the calculated incrementality metrics to the frontend
     liftPercentage,
     testCR,
     controlCR,
   };
+
+  // Abandoned Zone Heatmap / Growth Consultant
+  const missedChecks = await prisma.deliveryCheck.findMany({
+    where: { shop, inRadius: false, timestamp: { gte: thirtyDaysAgo } },
+  });
+
+  const zoneMap = new Map<
+    string,
+    { zone: string; count: number; maxDistance: number }
+  >();
+  missedChecks.forEach((check) => {
+    const parts = (check.customerAddress || "").split(",");
+    const zone =
+      parts.length > 1
+        ? parts.slice(1).join(",").trim()
+        : check.customerAddress;
+
+    if (!zone || zone.trim() === "") return;
+
+    if (!zoneMap.has(zone)) {
+      zoneMap.set(zone, { zone, count: 0, maxDistance: 0 });
+    }
+    const data = zoneMap.get(zone)!;
+    data.count += 1;
+    if (check.distance && check.distance > data.maxDistance) {
+      data.maxDistance = check.distance;
+    }
+  });
+
+  const aov =
+    advancedStats.totalOrders > 0
+      ? advancedStats.totalRevenue / advancedStats.totalOrders
+      : 65;
+
+  const abandonedZones = Array.from(zoneMap.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map((z) => ({
+      zone: z.zone,
+      count: z.count,
+      maxDistance: z.maxDistance,
+      lostRevenue: z.count * aov,
+    }));
+
+  const currentRadius = settings?.deliveryRadius || 10;
 
   const attributionMap = new Map();
   for (let i = 0; i < 30; i++) {
@@ -117,7 +160,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       month: "short",
       day: "numeric",
     });
-    // Add an organic bucket to the map
     attributionMap.set(dateStr, {
       date: dateStr,
       badge: 0,
@@ -138,7 +180,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       } else if (conv.source === "delivery_badge") {
         dayData.badge += conv.orderValue;
       } else {
-        dayData.organic += conv.orderValue; // Capture organic & control group sales together for the chart baseline
+        dayData.organic += conv.orderValue;
       }
     }
   });
@@ -188,6 +230,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     advancedStats,
     trendingProducts: enrichedProducts,
     attributionChartData,
+    abandonedZones, // 👈 Added
+    currentRadius, // 👈 Added
   });
 };
 
@@ -204,6 +248,8 @@ export default function InsightsRoute() {
           recentConversions={data.recentConversions}
           stats={data.advancedStats}
           attributionChartData={data.attributionChartData}
+          abandonedZones={data.abandonedZones}
+          currentRadius={data.currentRadius}
         />
       </BlockStack>
     </Page>

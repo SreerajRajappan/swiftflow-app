@@ -58,7 +58,7 @@ export async function runCartRecoveryAgent(shop?: string) {
 
     if (pendingCarts.length === 0) return;
 
-    // 🚀 CRITICAL FIX 2: Process all 10 carts concurrently to beat serverless timeout limits
+    // 🚀 Process all 10 carts concurrently to beat serverless timeout limits
     await Promise.allSettled(
       pendingCarts.map(async (cart) => {
         // -- Billing Limits Check --
@@ -79,7 +79,7 @@ export async function runCartRecoveryAgent(shop?: string) {
             where: { id: cart.id },
             data: { agentStatus: "LIMIT_REACHED" },
           });
-          return; // Exit this specific promise
+          return;
         }
 
         if (planLevel.isPro && totalMonthlyRevenue >= 5000) {
@@ -87,7 +87,7 @@ export async function runCartRecoveryAgent(shop?: string) {
             where: { id: cart.id },
             data: { agentStatus: "LIMIT_REACHED" },
           });
-          return; // Exit this specific promise
+          return;
         }
 
         const lock = await db.cartRecovery.updateMany({
@@ -128,6 +128,9 @@ export async function runCartRecoveryAgent(shop?: string) {
 
           if (!settings) return;
 
+          // Safe typecast for new schema fields to prevent TypeScript compilation errors
+          const safeSettings = settings as any;
+
           // 👇 Sanitize Inputs
           const items = cart.lineItems as any[];
           const rawProductNames =
@@ -139,27 +142,37 @@ export async function runCartRecoveryAgent(shop?: string) {
             300,
           );
 
+          // 🚀 FEATURE 2: Autonomous A/B Testing Integration
+          let variant = cart.abTestVariant || "A";
+          if (settings.abTestEnabled && !cart.abTestVariant) {
+            variant = Math.random() > 0.5 ? "A" : "B";
+          } else if (safeSettings.abTestWinner) {
+            variant = safeSettings.abTestWinner;
+          }
+
           let abContext = "";
           let safeAbMessage = "";
-          if (settings.abTestEnabled) {
+          if (settings.abTestEnabled || safeSettings.abTestWinner) {
             safeAbMessage = sanitizeForPrompt(
-              cart.abTestVariant === "A"
+              variant === "A"
                 ? settings.abTestMessageA
                 : settings.abTestMessageB,
               200,
             );
-            abContext = `- Required promotional phrase to include: "${safeAbMessage}"`;
+            abContext = `- Required promotional phrase to include exactly as written: "${safeAbMessage}"`;
           }
 
-          const distanceMiles = (currentLeak?.metadata as any)?.distanceMiles;
+          // 🚀 THE FIX: Correctly parse distance from leak metadata, not the cart root
+          const distanceMiles = parseFloat(
+            (currentLeak?.metadata as any)?.distanceMiles || "0",
+          );
+
           let distanceContext = "They live in our local delivery zone.";
           let etaContext = "";
 
-          // 🚀 Extract the customer's actual city/neighborhood for the prompt
+          // Extract the customer's actual city/neighborhood for the prompt
           let customerLocation = "your neighborhood";
           if (cart.customerAddress) {
-            // Shopify addresses are usually "123 Main St, City, State, Zip"
-            // Grabbing the second item usually isolates the City/Neighborhood beautifully
             const parts = cart.customerAddress.split(",");
             if (parts.length > 1) {
               customerLocation = parts[1].trim();
@@ -169,7 +182,7 @@ export async function runCartRecoveryAgent(shop?: string) {
           let routingContext =
             "Invite them to complete their order for fast local delivery.";
 
-          if (distanceMiles) {
+          if (distanceMiles > 0) {
             distanceContext = `They are exactly ${distanceMiles.toFixed(1)} miles away from our store.`;
             etaContext = `Estimated delivery time for their address is ${estimateDeliveryTime(distanceMiles)}.`;
 
@@ -177,26 +190,45 @@ export async function runCartRecoveryAgent(shop?: string) {
             routingContext = `Urgency Strategy (CRITICAL): Frame this as a live logistics update. Tell the customer that one of our drivers is already scheduled to head toward ${customerLocation} later today. Emphasize that if they complete their checkout now, we can seamlessly add their items to that specific delivery route.`;
           }
 
-          // 👇 Time-of-Day Context Prompting
+          // 🚀 FEATURE 3: Time-of-Day Context Prompting
           const currentHour = new Date().getHours();
           let timeContext = "";
-          if (currentHour >= 5 && currentHour <= 10) {
-            timeContext =
-              "- Time Context: It is morning. Add a subtle morning theme (e.g., starting the day right).";
-          } else if (currentHour >= 17 && currentHour <= 21) {
-            timeContext =
-              "- Time Context: It is evening. Add a subtle evening theme (e.g., dinner time, winding down).";
-          } else if (currentHour >= 22 || currentHour <= 4) {
-            timeContext =
-              "- Time Context: It is late at night. Add a subtle late-night theme (e.g., late-night craving).";
+          if (currentHour >= 9 && currentHour <= 15) {
+            timeContext = `- Time Context: It is daytime. Urgency Strategy: "Order in the next hour to make the evening delivery route."`;
+          } else if (currentHour >= 16 && currentHour <= 21) {
+            timeContext = `- Time Context: It is evening. Urgency Strategy: "Order tonight to secure the first delivery slot tomorrow morning."`;
+          } else {
+            timeContext = `- Time Context: Neutral.`;
           }
 
-          // 👇 Split into strict System Rules and User Context
+          // 🚀 FEATURE 4: Agentic Dynamic Pricing (The Unfair Advantage)
+          let dynamicDiscountContext = "";
+          let authorizedDiscountCode = "";
+
+          if (
+            safeSettings.dynamicDiscountEnabled &&
+            safeSettings.discountCode &&
+            cart.cartValue
+          ) {
+            if (
+              cart.cartValue >= (safeSettings.discountCartThreshold || 100) &&
+              distanceMiles <= (safeSettings.discountDistance || 3)
+            ) {
+              authorizedDiscountCode = safeSettings.discountCode;
+              dynamicDiscountContext = `
+               - 🚨 AUTHORIZED DISCOUNT NEGOTIATION 🚨 
+               The customer's cart is highly profitable and close by. 
+               You are authorized to offer them the 10% discount code '${authorizedDiscountCode}' to close the sale immediately. 
+               Use this code exactly as written.`;
+            }
+          }
+
+          // 👇 THE FIX: Strict System Rules Reinstated
           const SYSTEM_PROMPT = `You are an expert e-commerce copywriter for a LOCAL delivery business.
           STRICT RULES:
           1. Write exactly 2 short paragraphs. No more, no less.
           2. NEVER invent specific delivery times, prices, discount codes, or product details.
-          3. NEVER use the words "urgent", "last chance", or high-pressure sales language.
+          3. Only offer a discount code if explicitly authorized in the prompt below.
           4. Tone: warm, helpful, neighborhood-friendly.
           5. NO subject line. Just the email body.
           6. Max 100 words total.`;
@@ -210,6 +242,7 @@ export async function runCartRecoveryAgent(shop?: string) {
           - Merchant's Core Message: "${safeMerchantMessage}"
           ${timeContext}
           ${abContext}
+          ${dynamicDiscountContext}
           `;
 
           const response = await openai.chat.completions.create({
@@ -226,22 +259,23 @@ export async function runCartRecoveryAgent(shop?: string) {
             response.choices[0]?.message?.content?.trim() || "";
 
           // 👇 AI Output Validation (Red Flag Detection)
-          const redFlags = [
-            "$",
-            "free shipping",
-            "discount code",
-            "promo",
-            "% off",
-          ];
+          const redFlags = ["$", "free shipping", "discount", "promo", "% off"];
           const merchantMessageLower = safeMerchantMessage.toLowerCase();
           const abMessageLower = safeAbMessage.toLowerCase();
+          const authorizedDiscountLower = authorizedDiscountCode.toLowerCase();
 
           // Check if the AI invented a discount that the merchant didn't explicitly authorize
           const hasHallucinatedDiscount = redFlags.some(
             (flag) =>
               generatedEmailBody.toLowerCase().includes(flag) &&
               !merchantMessageLower.includes(flag) &&
-              !abMessageLower.includes(flag),
+              !abMessageLower.includes(flag) &&
+              !(
+                authorizedDiscountLower &&
+                generatedEmailBody
+                  .toLowerCase()
+                  .includes(authorizedDiscountLower)
+              ),
           );
 
           if (
@@ -259,7 +293,6 @@ export async function runCartRecoveryAgent(shop?: string) {
           }
 
           // 🚀 The Cross-Device Persistent Cart Link
-          // We use abandonedCheckoutUrl if it exists, otherwise fallback to the generic /cart
           const cartUrl =
             cart.abandonedCheckoutUrl || `https://${cart.shop}/cart`;
 
@@ -293,6 +326,7 @@ export async function runCartRecoveryAgent(shop?: string) {
                 generatedEmail: finalEmailText,
                 emailSent: true,
                 emailSentAt: new Date(),
+                abTestVariant: variant, // 🚀 Saves the specific test variant used
               },
             });
 

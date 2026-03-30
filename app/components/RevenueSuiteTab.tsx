@@ -146,6 +146,18 @@ export function RevenueSuiteTab({
       "Your address qualifies for our special local delivery!",
   );
 
+  // 🚀 THE FIX: Agentic Dynamic Pricing State
+  const [dynamicDiscountEnabled, setDynamicDiscountEnabled] = useState(
+    data?.dynamicDiscountEnabled || false,
+  );
+  const [discountCartThreshold, setDiscountCartThreshold] = useState(
+    data?.discountCartThreshold?.toString() || "100",
+  );
+  const [discountDistance, setDiscountDistance] = useState(
+    data?.discountDistance?.toString() || "3",
+  );
+  const [discountCode, setDiscountCode] = useState(data?.discountCode || "");
+
   const [isWaitingForAi, setIsWaitingForAi] = useState(false);
   const [wasLocalSaving, setWasLocalSaving] = useState(false);
   const [isChartMounted, setIsChartMounted] = useState(false);
@@ -239,6 +251,12 @@ export function RevenueSuiteTab({
     form.append("abTestMessageB", msgB);
     form.append("dailyGoal", localDailyGoal.toString());
 
+    // 🚀 THE FIX: Append dynamic pricing fields to the payload
+    form.append("dynamicDiscountEnabled", String(dynamicDiscountEnabled));
+    form.append("discountCartThreshold", discountCartThreshold);
+    form.append("discountDistance", discountDistance);
+    form.append("discountCode", discountCode);
+
     fetcher.submit(form, { method: "post" });
   }, [
     subject,
@@ -250,6 +268,10 @@ export function RevenueSuiteTab({
     isPro,
     template,
     localDailyGoal,
+    dynamicDiscountEnabled,
+    discountCartThreshold,
+    discountDistance,
+    discountCode,
   ]);
 
   const templateOptions = [
@@ -274,7 +296,6 @@ export function RevenueSuiteTab({
 
   return (
     <Box paddingBlockEnd="800">
-      {/* 🚀 THE FIX: Global SVG override specifically protecting Recharts from Polaris */}
       <style>
         {`
           @keyframes scrollTicker {
@@ -293,7 +314,6 @@ export function RevenueSuiteTab({
       </style>
 
       <Layout>
-        {/* --- SMART REVIEW NUDGE --- */}
         {shouldShowReviewNudge && (
           <Box paddingBlockEnd="400">
             <Banner
@@ -1260,6 +1280,18 @@ export function RevenueSuiteTab({
 
             {/* A/B TESTING */}
             <Card>
+              {data?.abTestWinner && (
+                <Banner
+                  tone="success"
+                  title="A/B Test Concluded Automatically! 🏆"
+                >
+                  <p>
+                    After 50 sends, <strong>Variant {data.abTestWinner}</strong>{" "}
+                    was mathematically proven to convert higher. The AI is now
+                    exclusively using this winning message.
+                  </p>
+                </Banner>
+              )}
               <BlockStack gap="400">
                 <InlineStack align="space-between" blockAlign="center">
                   <Text as="h2" variant="headingMd">
@@ -1327,6 +1359,91 @@ export function RevenueSuiteTab({
                     disabled={!abEnabled}
                   >
                     Save A/B Test
+                  </Button>
+                )}
+              </BlockStack>
+            </Card>
+
+            {/* 🚀 THE FIX: Agentic Dynamic Pricing UI (Fully Wired) */}
+            <Card>
+              <BlockStack gap="400">
+                <InlineStack align="space-between" blockAlign="center">
+                  <InlineStack gap="200" blockAlign="center">
+                    <Icon source={MagicIcon} tone="magic" />
+                    <Text as="h2" variant="headingMd">
+                      Agentic Dynamic Pricing
+                    </Text>
+                  </InlineStack>
+                  <Badge
+                    tone={dynamicDiscountEnabled ? "success" : "attention"}
+                  >
+                    {dynamicDiscountEnabled ? "Negotiator Active" : "Paused"}
+                  </Badge>
+                </InlineStack>
+                <Divider />
+                <Text as="p" tone="subdued" variant="bodySm">
+                  Give the AI Agent an "Unfair Advantage." If a cart is highly
+                  profitable and close by, the AI will dynamically negotiate by
+                  offering a discount code to close the sale.
+                </Text>
+
+                <Button
+                  variant={
+                    isPro
+                      ? dynamicDiscountEnabled
+                        ? "primary"
+                        : "secondary"
+                      : "secondary"
+                  }
+                  onClick={() =>
+                    isPro
+                      ? setDynamicDiscountEnabled(!dynamicDiscountEnabled)
+                      : navigate("/app/billing")
+                  }
+                >
+                  {isPro
+                    ? dynamicDiscountEnabled
+                      ? "Disable Negotiator"
+                      : "Enable Negotiator"
+                    : "Upgrade to Pro to Enable"}
+                </Button>
+
+                <InlineGrid columns={3} gap="400">
+                  <TextField
+                    label="If cart is over ($)"
+                    type="number"
+                    value={discountCartThreshold}
+                    onChange={setDiscountCartThreshold}
+                    autoComplete="off"
+                    prefix="$"
+                    disabled={!isPro || !dynamicDiscountEnabled}
+                  />
+                  <TextField
+                    label="Distance under (Mi)"
+                    type="number"
+                    value={discountDistance}
+                    onChange={setDiscountDistance}
+                    autoComplete="off"
+                    disabled={!isPro || !dynamicDiscountEnabled}
+                  />
+                  <TextField
+                    label="Discount Code"
+                    value={discountCode}
+                    onChange={setDiscountCode}
+                    autoComplete="off"
+                    placeholder="e.g. LOCAL10"
+                    disabled={!isPro || !dynamicDiscountEnabled}
+                  />
+                </InlineGrid>
+
+                {isPro && (
+                  <Button
+                    variant="primary"
+                    loading={isLocalSaving}
+                    onClick={handleSaveConfig}
+                    disabled={!dynamicDiscountEnabled}
+                  >
+                    Save Negotiation Rules
                   </Button>
                 )}
               </BlockStack>

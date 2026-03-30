@@ -53,6 +53,13 @@ model AppSettings {
   abTestEnabled        Boolean  @default(false)
   abTestMessageA       String   @default("We deliver to your area!")
   abTestMessageB       String   @default("Fast local delivery available!")
+  abTestWinner         String?  // 'A' or 'B'
+
+  // Agentic Dynamic Pricing
+  dynamicDiscountEnabled Boolean  @default(false)
+  discountCartThreshold  Float    @default(100)
+  discountDistance       Float    @default(3)
+  discountCode           String?
 
   dailyGoal            Float    @default(500)
 
@@ -115,6 +122,7 @@ model CartRecovery {
   recoveryValue   Float?
   cartValue       Float?
   abTestVariant   String?
+  messageVariant  String?
   
   // --- AGENTIC FIELDS ---
   lineItems       Json?    
