@@ -1,39 +1,35 @@
-# fly.toml app configuration file generated for swiftflow-app on 2026-02-26T19:58:03+05:30
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
-app = 'swiftflow-app'
-primary_region = 'iad'
-
-[build]
+app = "swiftflow-app"
+primary_region = "iad"
 
 [env]
-  PORT = '3000'
-  SCOPES = 'write_products,read_products,read_orders,write_orders,read_script_tags,write_script_tags,read_themes,write_themes,read_checkouts,write_checkouts'
-  SHOPIFY_API_KEY = 'c51a636b3f088fcdb03a770d4ee64992'
-  SHOPIFY_APP_URL = 'https://swiftflow.logiclooms.io'
+  PORT = "3000"
+  HOST = "0.0.0.0" 
+  SCOPES = "write_products,read_products,read_orders,write_orders,read_script_tags,write_script_tags,read_themes,write_themes,read_checkouts,write_checkouts"
+  SHOPIFY_API_KEY = "c51a636b3f088fcdb03a770d4ee64992"
+  SHOPIFY_APP_URL = "https://swiftflow.logiclooms.io"
 
-
-[[mounts]]
-  source = 'data'
-  destination = '/data'
-  auto_extend_size_threshold = 80
-  auto_extend_size_increment = '1GB'
-  auto_extend_size_limit = '10GB'
+[deploy]
+  release_command = "npm run setup"
 
 [http_service]
-  internal_port = 3000
-  force_https = true
-  auto_stop_machines = 'stop'
   auto_start_machines = true
+  auto_stop_machines = true
+  force_https = true
+  internal_port = 3000
   min_machines_running = 0
-  processes = ['app']
+  processes = [ "app" ]
+
+[[mounts]]
+  auto_extend_size_increment = "1GB"
+  auto_extend_size_limit = "10GB"
+  auto_extend_size_threshold = 80
+  destination = "/data"
+  source = "data"
+
+[processes]
+  app = "npm run start"
 
 [[vm]]
-  memory = '512mb'
   cpus = 1
+  memory = "512mb"
   memory_mb = 512
-
-  [processes]
-  app = "npm run docker-start"
