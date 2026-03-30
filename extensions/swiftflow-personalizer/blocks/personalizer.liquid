@@ -2,7 +2,7 @@
   <span id="sf-banner-text" style="font-weight: bold; color: #ffffff;"></span>
 </div>
 
-<div class="swiftflow-container" style="padding: 20px; border: 1px solid #e1e3e5; border-radius: 8px; background: #fafbfb;">
+<div id="sf-widget-container" class="swiftflow-container" style="padding: 20px; border: 1px solid #e1e3e5; border-radius: 8px; background: #fafbfb;">
   <h4 id="sf-block-heading" style="margin-bottom: 10px; font-weight: 600;">{{ block.settings.heading }}</h4>
   
   <input type="text" 
@@ -13,14 +13,27 @@
 
 <script>
   (function() {
+    // A/B Test Holdout Group Logic
+    // 10% of traffic sees NOTHING, but we still track them to prove incrementality.
+    const isControlGroup = Math.random() < 0.10; 
+
+    if (isControlGroup) {
+      // Hide the main widget container immediately
+      const widgetContainer = document.getElementById('sf-widget-container');
+      if (widgetContainer) widgetContainer.style.display = 'none';
+      // The banner is hidden by default, so it remains hidden.
+    }
+
     async function loadSwiftFlow() {
+      // Don't waste proxy fetch resources on the control group
+      if (isControlGroup) return; 
+
       try {
-        // Unified Proxy URL matching the TOML subpath
         const response = await fetch(`/apps/swiftflow-revenue/proxy?product_id={{ product.id }}`);
         if (!response.ok) return;
         
         const data = await response.json();
-
+        
         if (data.headerText) {
           const banner = document.getElementById('sf-banner');
           const text = document.getElementById('sf-banner-text');
@@ -37,13 +50,11 @@
     // Inject hidden inputs directly into the theme's forms
     function attachToCartForm() {
       const visibleInput = document.getElementById('sf-custom-text');
-      if (!visibleInput) return;
-
-      // Find all "Add to Cart" forms on the page
       const productForms = document.querySelectorAll('form[action*="/cart/add"]');
-
+      
       productForms.forEach(form => {
-        if (!form.querySelector('.sf-hidden-personalization')) {
+        // 1. Personalization Text Field (Only if the widget is visible)
+        if (visibleInput && !form.querySelector('.sf-hidden-personalization')) {
           const hiddenInput = document.createElement('input');
           hiddenInput.type = 'hidden';
           hiddenInput.name = 'properties[Personalization]';
@@ -51,31 +62,33 @@
           form.appendChild(hiddenInput);
         }
 
-        // 🚀 Inject a hidden tracking attribution property!
-        // The underscore (_) tells Shopify to hide this from the user's cart UI
+        // 🚀 2. Inject the hidden tracking attribution property!
         if (!form.querySelector('.sf-tracking-source')) {
           const trackingInput = document.createElement('input');
           trackingInput.type = 'hidden';
           trackingInput.name = 'properties[_SwiftFlow_Source]';
-          trackingInput.value = 'delivery_badge';
+          // Tag the cart with their exact A/B test cohort
+          trackingInput.value = isControlGroup ? 'control_group' : 'delivery_badge'; 
           trackingInput.className = 'sf-tracking-source';
           form.appendChild(trackingInput);
         }
       });
 
-      // Every time the customer types, copy the text to the hidden fields
-      visibleInput.addEventListener('input', function(e) {
-        const hiddenInputs = document.querySelectorAll('.sf-hidden-personalization');
-        hiddenInputs.forEach(hidden => {
-          hidden.value = e.target.value;
+      // Sync the visible text to the hidden inputs
+      if (visibleInput) {
+        visibleInput.addEventListener('input', function(e) {
+          const hiddenInputs = document.querySelectorAll('.sf-hidden-personalization');
+          hiddenInputs.forEach(hidden => {
+            hidden.value = e.target.value;
+          });
         });
-      });
+      }
     }
 
     function init() {
       loadSwiftFlow();
       // A tiny 500ms delay to let the theme finish rendering its forms
-      setTimeout(attachToCartForm, 500); 
+      setTimeout(attachToCartForm, 500);
     }
 
     // Ensures the script runs correctly inside the Shopify Theme Editor

@@ -33,7 +33,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 5,
   });
 
-  // 🚀 THE FIX: Correctly calculate the 30-day window to INCLUDE TODAY
+  // 🚀 Correctly calculate the 30-day window to INCLUDE TODAY
   const today = new Date();
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(today.getDate() - 29); // Back 29 days + Today = 30 Days total
@@ -49,6 +49,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const recoveryConversions = allConversions.filter(
     (c) => c.source === "cart_recovery",
   );
+  // 🚀 Fetch the holdout control group conversions
+  const controlConversions = allConversions.filter(
+    (c) => c.source === "control_group",
+  );
 
   const allChecks = await prisma.deliveryCheck.findMany({
     where: { shop, timestamp: { gte: thirtyDaysAgo } },
@@ -62,6 +66,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const recovered = cartRecoveries.filter(
     (c) => c.recovered && c.recoveredAt && c.recoveredAt >= thirtyDaysAgo,
   );
+
+  // 🚀 THE FIX: A/B Test Math (Incrementality Lift)
+  const totalViews = await prisma.productView.count({ where: { shop } });
+
+  // Since we enforce a strict 90/10 split on the client, we derive views mathematically:
+  const testViews = Math.floor(totalViews * 0.9);
+  const controlViews = Math.ceil(totalViews * 0.1);
+
+  const testOrders = badgeConversions.length;
+  const controlOrders = controlConversions.length;
+
+  const testCR = testViews > 0 ? (testOrders / testViews) * 100 : 0;
+  const controlCR = controlViews > 0 ? (controlOrders / controlViews) * 100 : 0;
+
+  let liftPercentage = 0;
+  if (controlCR > 0) {
+    liftPercentage = ((testCR - controlCR) / controlCR) * 100;
+  } else if (testCR > 0 && controlCR === 0) {
+    liftPercentage = 100; // Total dominance over control
+  }
 
   const advancedStats = {
     totalRevenue: allConversions.reduce((s, c) => s + c.orderValue, 0),
@@ -78,12 +102,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     recoveredCount: recovered.length,
     recoveredRevenue: recovered.reduce((s, c) => s + (c.recoveryValue ?? 0), 0),
     recoveryRate: emailsSent > 0 ? (recovered.length / emailsSent) * 100 : 0,
+
+    // 🚀 Pass the calculated incrementality metrics to the frontend
+    liftPercentage,
+    testCR,
+    controlCR,
   };
 
   const attributionMap = new Map();
   for (let i = 0; i < 30; i++) {
     const d = new Date(thirtyDaysAgo);
-    d.setDate(d.getDate() + i); // This now finishes exactly on Today!
+    d.setDate(d.getDate() + i);
     const dateStr = d.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
@@ -109,7 +138,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       } else if (conv.source === "delivery_badge") {
         dayData.badge += conv.orderValue;
       } else {
-        dayData.organic += conv.orderValue; // Capture the organic sales!
+        dayData.organic += conv.orderValue; // Capture organic & control group sales together for the chart baseline
       }
     }
   });

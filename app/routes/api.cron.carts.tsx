@@ -6,6 +6,8 @@ import {
 import { processAbandonedCarts } from "../services/email.server";
 import { runCartRecoveryAgent } from "../agent.server";
 import db from "../db.server";
+import { unauthenticated } from "../shopify.server";
+import { BASIC_PLANS, PRO_PLANS, ELITE_PLANS } from "../constants";
 
 // 👇 1. Reusable Security Guard
 function authenticateCron(request: Request) {
@@ -36,14 +38,70 @@ async function executeCartRecoveryCycle() {
     }
 
     // 🚀 CRITICAL FIX: Asynchronous Batching Across Shops
-    // We use Promise.allSettled so all shops are processed in parallel.
-    // If one shop crashes, it will NOT stop the others from recovering revenue.
     await Promise.allSettled(
       activeShops.map(async ({ shop }) => {
         console.log(`\n🔄 Processing Shop: ${shop}`);
         try {
-          // Process emails and AI agent sequentially FOR THIS SHOP ONLY,
-          // but parallelized across the global app.
+          // --- 🛑 SECURE REVENUE & FREELOADER CHECK ---
+          const startOfMonth = new Date();
+          startOfMonth.setDate(1);
+          startOfMonth.setHours(0, 0, 0, 0);
+
+          const currentMonthData = await db.conversionEvent.aggregate({
+            where: { shop, createdAt: { gte: startOfMonth } },
+            _sum: { orderValue: true },
+          });
+          const currentMonthRevenue = currentMonthData._sum?.orderValue || 0;
+
+          // If revenue exceeds the lowest tier limit ($1000), we must verify their actual plan
+          if (currentMonthRevenue >= 1000) {
+            // Fetch offline admin context to query live billing status
+            const { admin } = await unauthenticated.admin(shop);
+            const response = await admin.graphql(`
+              #graphql
+              query {
+                currentAppInstallation {
+                  activeSubscriptions {
+                    name
+                    status
+                  }
+                }
+              }
+            `);
+            const payload = await response.json();
+            const activeSub =
+              payload.data?.currentAppInstallation?.activeSubscriptions?.find(
+                (sub: any) => sub.status === "ACTIVE",
+              );
+            const planName = activeSub?.name || "";
+
+            const isBasic = BASIC_PLANS.includes(planName);
+            const isPro = PRO_PLANS.includes(planName);
+            const isElite = ELITE_PLANS.includes(planName);
+
+            // 🛑 Hard Enforce Billing Limits
+            if (isBasic && currentMonthRevenue >= 1000) {
+              console.warn(
+                `🛑 [LIMIT REACHED] Shop ${shop} is on Basic Plan but hit $${currentMonthRevenue.toFixed(2)}. AI Agent paused.`,
+              );
+              return; // Halt execution for this shop
+            }
+            if (isPro && currentMonthRevenue >= 5000) {
+              console.warn(
+                `🛑 [LIMIT REACHED] Shop ${shop} is on Pro Plan but hit $${currentMonthRevenue.toFixed(2)}. AI Agent paused.`,
+              );
+              return; // Halt execution for this shop
+            }
+            if (!isBasic && !isPro && !isElite) {
+              console.warn(
+                `🛑 [NO VALID PLAN] Shop ${shop} has no active paid plan but hit $${currentMonthRevenue.toFixed(2)}. AI Agent paused.`,
+              );
+              return; // Prevent execution if they uninstalled or canceled billing
+            }
+          }
+          // --- END FREELOADER CHECK ---
+
+          // 🚀 EXECUTION (Only reached if limits aren't exceeded)
           await processAbandonedCarts(shop);
           await runCartRecoveryAgent(shop);
         } catch (shopError) {
@@ -68,7 +126,7 @@ async function executeCartRecoveryCycle() {
   }
 }
 
-// 👇 3. Support GET requests (Standard for basic Cron services)
+// 👇 3. Support GET requests
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (!authenticateCron(request)) {
     return json({ error: "Unauthorized" }, { status: 401 });
@@ -76,7 +134,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return executeCartRecoveryCycle();
 };
 
-// 👇 4. Support POST requests (If you trigger via webhooks or secure POST)
+// 👇 4. Support POST requests
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (!authenticateCron(request)) {
     return json({ error: "Unauthorized" }, { status: 401 });

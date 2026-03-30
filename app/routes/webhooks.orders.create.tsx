@@ -22,23 +22,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     orderPayload.contact_email ||
     orderPayload.customer?.email;
 
-  // We will track if this sale came from our AI Agent or the Badge
+  // We will track if this sale came from our AI Agent, the Badge, or the Control Group
   let isAiRecovery = false;
-  let isBadgeConversion = false; // 🚀 New flag added
+  let isBadgeConversion = false;
+  let isControlGroup = false; // 🚀 New flag added
 
   try {
-    // 🚀 THE FIX: Scan line items for our hidden attribution property
+    // Scan line items for our hidden attribution property
     if (orderPayload.line_items && Array.isArray(orderPayload.line_items)) {
       for (const item of orderPayload.line_items) {
         if (item.properties && Array.isArray(item.properties)) {
-          const hasTracking = item.properties.some(
+          const badgeTrack = item.properties.some(
             (prop: any) =>
               prop.name === "_SwiftFlow_Source" &&
               prop.value === "delivery_badge",
           );
-          if (hasTracking) {
-            isBadgeConversion = true;
-            break; // Found it! No need to check other items
+          const controlTrack = item.properties.some(
+            (prop: any) =>
+              prop.name === "_SwiftFlow_Source" &&
+              prop.value === "control_group",
+          );
+
+          if (badgeTrack) isBadgeConversion = true;
+          if (controlTrack) isControlGroup = true;
+
+          // Found a tracking token! No need to check other items
+          if (isBadgeConversion || isControlGroup) {
+            break;
           }
         }
       }
@@ -63,11 +73,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
 
       if (recovery) {
-        isAiRecovery = true; // Flag this order as an AI win!
-
-        // 1. Mark the recovery as successful
-        await prisma.cartRecovery.update({
-          where: { id: recovery.id },
+        // Atomic Lock via updateMany.
+        const claimResult = await prisma.cartRecovery.updateMany({
+          where: {
+            id: recovery.id,
+            recovered: false, // The Atomic Lock
+          },
           data: {
             recovered: true,
             recoveredAt: new Date(),
@@ -75,26 +86,39 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           },
         });
 
-        // 2. Update the Revenue Leak UI to show the green "Recovered" badge
-        const leaks = await prisma.revenueLeak.findMany({
-          where: { shop: shop },
-        });
+        // Only proceed if THIS specific webhook process secured the database lock
+        if (claimResult.count > 0) {
+          isAiRecovery = true; // Flag this order as an AI win!
 
-        // Find the leak matching the original cart token
-        const currentLeak = leaks
-          .reverse()
-          .find((l: any) => l.metadata?.cartToken === recovery.cartToken);
-
-        if (currentLeak) {
-          await prisma.revenueLeak.update({
-            where: { id: currentLeak.id },
-            data: { status: "RECOVERED" },
+          // Update the Revenue Leak UI to show the green "Recovered" badge
+          const leaks = await prisma.revenueLeak.findMany({
+            where: { shop: shop },
           });
-        }
 
-        console.log(
-          `🎉💰 [AI RECOVERY SUCCESS] Just banked $${totalAmount} for ${shop}!`,
-        );
+          // Find the leak matching the original cart token
+          const currentLeak = leaks
+            .reverse()
+            .find((l: any) => l.metadata?.cartToken === recovery.cartToken);
+
+          if (currentLeak) {
+            // Apply the exact same atomic lock safety to the leak status
+            await prisma.revenueLeak.updateMany({
+              where: {
+                id: currentLeak.id,
+                status: { not: "RECOVERED" }, // The Atomic Lock
+              },
+              data: { status: "RECOVERED" },
+            });
+          }
+
+          console.log(
+            `🎉💰 [AI RECOVERY SUCCESS] Just banked $${totalAmount} for ${shop}!`,
+          );
+        } else {
+          console.log(
+            `⚠️ [RACE CONDITION PREVENTED] Duplicate webhook blocked for recovery ${recovery.id}`,
+          );
+        }
       }
     }
 
@@ -104,9 +128,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       finalSource = "cart_recovery"; // AI recovery overrides everything
     } else if (isBadgeConversion) {
       finalSource = "delivery_badge";
+    } else if (isControlGroup) {
+      finalSource = "control_group"; // Record the A/B test holdout
     }
 
     // --- RECORD THE CONVERSION EVENT ---
+    // The empty `update: {}` block ensures that if a duplicate webhook hits,
+    // it safely ignores it without overwriting our first-touch attribution!
     await prisma.conversionEvent.upsert({
       where: { orderId: orderId },
       update: {}, // Prevent double-counting on duplicate webhooks
@@ -114,7 +142,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         shop: shop,
         orderId: orderId,
         orderValue: totalAmount,
-        source: finalSource, // 👈 Saved dynamically based on our checks
+        source: finalSource,
         cartToken: checkoutToken || cartToken || null,
       },
     });

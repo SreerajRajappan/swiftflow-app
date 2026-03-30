@@ -13,6 +13,7 @@ import {
   EmptyState,
   InlineGrid,
   DataTable,
+  Banner,
 } from "@shopify/polaris";
 import { ChartVerticalIcon } from "@shopify/polaris-icons";
 import { useNavigate } from "@remix-run/react";
@@ -51,6 +52,9 @@ interface InsightsTabProps {
     recoveredCount: number;
     recoveredRevenue: number;
     recoveryRate: number;
+    liftPercentage: number;
+    testCR: number;
+    controlCR: number;
   };
 }
 
@@ -63,7 +67,6 @@ export function InsightsTab({
 }: InsightsTabProps) {
   const navigate = useNavigate();
 
-  // Bulletproof rendering state to prevent Hydration & SVG measuring crashes
   const [isChartMounted, setIsChartMounted] = useState(false);
   useEffect(() => {
     setIsChartMounted(true);
@@ -130,6 +133,20 @@ export function InsightsTab({
           }
         `}
       </style>
+
+      {/* The Proof Banner */}
+      {stats.liftPercentage > 0 && (
+        <Banner tone="success" title="Incrementality Proven 💰">
+          <Text as="p" variant="bodyMd">
+            Based on our automated 10% holdout group, the Delivery Badge has
+            increased your overall conversion rate by{" "}
+            <strong>{stats.liftPercentage.toFixed(1)}%</strong>. Customers
+            seeing the badge convert at{" "}
+            <strong>{stats.testCR.toFixed(2)}%</strong> compared to just{" "}
+            {stats.controlCR.toFixed(2)}% without it.
+          </Text>
+        </Banner>
+      )}
 
       {/* KPI ROW */}
       <InlineGrid columns={{ xs: 1, sm: 2, md: 4 }} gap="400">
