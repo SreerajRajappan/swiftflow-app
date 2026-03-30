@@ -12,7 +12,7 @@ primary_region = 'iad'
   PORT = '3000'
   SCOPES = 'read_locations,read_orders,write_app_proxy,write_products'
   SHOPIFY_API_KEY = 'c51a636b3f088fcdb03a770d4ee64992'
-  SHOPIFY_APP_URL = 'https://logiclooms.io'
+  SHOPIFY_APP_URL = 'https://swiftflow.logiclooms.io'
 
 
 [[mounts]]

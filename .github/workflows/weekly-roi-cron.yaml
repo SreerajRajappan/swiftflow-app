@@ -13,8 +13,9 @@ jobs:
       - name: Wake up Fly.io and Trigger Weekly ROI Email
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        # Replace 'app.logiclooms.io' with your exact production subdomain if different
         run: |
-          curl -X POST "https://logiclooms.io/api/cron/weekly-roi" \
+          curl -X POST "https://swiftflow.logiclooms.io/api/cron/weekly-roi" \
           -H "Authorization: Bearer $CRON_SECRET" \
           -H "Content-Type: application/json" \
           --fail --silent --show-error

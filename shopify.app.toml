@@ -2,7 +2,7 @@
 
 client_id = "c51a636b3f088fcdb03a770d4ee64992"
 name = "SwiftFlow (DEV)"
-application_url = "https://swiftflow-app.fly.dev"
+application_url = "https://swiftflow.logiclooms.io"
 embedded = true
 
 [build]
