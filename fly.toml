@@ -10,7 +10,7 @@ primary_region = 'iad'
 
 [env]
   PORT = '3000'
-  SCOPES = 'read_locations,read_orders,write_app_proxy,write_products'
+  SCOPES = 'write_products,read_products,read_orders,write_orders,read_script_tags,write_script_tags,read_themes,write_themes,read_checkouts,write_checkouts'
   SHOPIFY_API_KEY = 'c51a636b3f088fcdb03a770d4ee64992'
   SHOPIFY_APP_URL = 'https://swiftflow.logiclooms.io'
 
