@@ -24,9 +24,9 @@ scopes = "write_products,read_products,read_orders,write_orders,read_script_tags
 
 [auth]
 redirect_urls = [
-  "https://swiftflow-app.fly.dev/auth/callback",
-  "https://swiftflow-app.fly.dev/auth/shopify/callback",
-  "https://swiftflow-app.fly.dev/api/auth/callback"
+  "https://swiftflow.logiclooms.io/auth/callback",
+  "https://swiftflow.logiclooms.io/auth/shopify/callback",
+  "https://swiftflow.logiclooms.io/api/auth/callback"
 ]
 
 [app_proxy]
