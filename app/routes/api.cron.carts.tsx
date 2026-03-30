@@ -22,7 +22,6 @@ function authenticateCron(request: Request) {
   return true;
 }
 
-// 🚀 THE FIX: Helper to chunk arrays for controlled processing
 function chunkArray<T>(array: T[], size: number): T[][] {
   const chunked = [];
   for (let i = 0; i < array.length; i += size) {
@@ -31,7 +30,6 @@ function chunkArray<T>(array: T[], size: number): T[][] {
   return chunked;
 }
 
-// 👇 The Core Cron Logic
 async function executeCartRecoveryCycle() {
   console.log("⏱️ Starting App-Wide Cart Recovery Cycle...");
 
@@ -41,46 +39,23 @@ async function executeCartRecoveryCycle() {
       select: { shop: true },
     });
 
-    if (activeShops.length === 0) {
-      console.log("No active shops found. Exiting cron.");
-      return json({ success: true, message: "No active shops." });
-    }
+    if (activeShops.length === 0) return json({ success: true });
 
-    // 🚀 THE FIX: Process in batches of 5 to protect RAM and API Rate Limits
+    // Process in batches of 5 to protect RAM and API Rate Limits
     const BATCH_SIZE = 5;
     const batches = chunkArray(activeShops, BATCH_SIZE);
 
     for (let i = 0; i < batches.length; i++) {
-      console.log(`\n📦 Processing Batch ${i + 1} of ${batches.length}...`);
       const currentBatch = batches[i];
 
       await Promise.allSettled(
         currentBatch.map(async ({ shop }) => {
-          console.log(`🔄 Checking Shop: ${shop}`);
           try {
-            // --- 🛑 SECURE REVENUE & FREELOADER CHECK ---
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
-            startOfMonth.setHours(0, 0, 0, 0);
-
-            const currentMonthData = await db.conversionEvent.aggregate({
-              where: { shop, createdAt: { gte: startOfMonth } },
-              _sum: { orderValue: true },
-            });
-            const currentMonthRevenue = currentMonthData._sum?.orderValue || 0;
-
-            // Fetch offline admin context to query live billing status FIRST
+            // 🚀 THE FIX: Fetch Live Subscription Status FIRST!
             const { admin } = await unauthenticated.admin(shop);
             const response = await admin.graphql(`
               #graphql
-              query {
-                currentAppInstallation {
-                  activeSubscriptions {
-                    name
-                    status
-                  }
-                }
-              }
+              query { currentAppInstallation { activeSubscriptions { name status } } }
             `);
             const payload = await response.json();
             const activeSub =
@@ -93,13 +68,25 @@ async function executeCartRecoveryCycle() {
             const isPro = PRO_PLANS.includes(planName);
             const isElite = ELITE_PLANS.includes(planName);
 
-            // 🛑 Hard Enforce Billing Limits & Active Subscriptions
+            // 🛑 IMPENETRABLE GATE: If they haven't approved a charge, block execution instantly.
             if (!isBasic && !isPro && !isElite) {
               console.warn(
-                `🛑 [NO VALID PLAN] Shop ${shop} has no active paid plan. AI Agent paused.`,
+                `🛑 [FREELOADER BLOCKED] Shop ${shop} has no active paid plan. AI Agent halted.`,
               );
-              return; // Completely blocks freeloading
+              return;
             }
+
+            // --- SECURE REVENUE LIMIT CHECK ---
+            const startOfMonth = new Date();
+            startOfMonth.setDate(1);
+            startOfMonth.setHours(0, 0, 0, 0);
+
+            const currentMonthData = await db.conversionEvent.aggregate({
+              where: { shop, createdAt: { gte: startOfMonth } },
+              _sum: { orderValue: true },
+            });
+            const currentMonthRevenue = currentMonthData._sum?.orderValue || 0;
+
             if (isBasic && currentMonthRevenue >= 1000) {
               console.warn(
                 `🛑 [LIMIT REACHED] Shop ${shop} is on Basic Plan but hit $${currentMonthRevenue.toFixed(2)}. AI Agent paused.`,
@@ -117,12 +104,10 @@ async function executeCartRecoveryCycle() {
             const settings = await db.appSettings.findUnique({
               where: { shop },
             });
-
             if (settings?.abTestEnabled) {
               const abRecoveries = await db.cartRecovery.findMany({
                 where: { shop, messageVariant: { not: null } },
               });
-
               const sendsA = abRecoveries.filter(
                 (r) => r.messageVariant === "A",
               ).length;
@@ -137,25 +122,20 @@ async function executeCartRecoveryCycle() {
                 const winsB = abRecoveries.filter(
                   (r) => r.messageVariant === "B" && r.recovered,
                 ).length;
-
-                const crA = sendsA > 0 ? winsA / sendsA : 0;
-                const crB = sendsB > 0 ? winsB / sendsB : 0;
-                const winner = crA >= crB ? "A" : "B";
+                const winner =
+                  (sendsA > 0 ? winsA / sendsA : 0) >=
+                  (sendsB > 0 ? winsB / sendsB : 0)
+                    ? "A"
+                    : "B";
 
                 await db.appSettings.update({
                   where: { shop },
-                  data: {
-                    abTestEnabled: false,
-                    abTestWinner: winner,
-                  },
+                  data: { abTestEnabled: false, abTestWinner: winner },
                 });
-                console.log(
-                  `🏆 [A/B TEST RESOLVED] Shop ${shop} test concluded. Winner is Variant ${winner}!`,
-                );
               }
             }
 
-            // 🚀 EXECUTION (Only reached if limits aren't exceeded)
+            // 🚀 EXECUTION (Only reached if limits aren't exceeded and plan is paid)
             await processAbandonedCarts(shop);
             await runCartRecoveryAgent(shop);
           } catch (shopError) {
@@ -164,25 +144,14 @@ async function executeCartRecoveryCycle() {
         }),
       );
 
-      // 🚀 THE FIX: Let the server breathe for 1 second between batches
       if (i < batches.length - 1) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
 
-    return json(
-      {
-        success: true,
-        message: `Abandoned cart cycle completed for ${activeShops.length} shops.`,
-      },
-      { status: 200 },
-    );
+    return json({ success: true }, { status: 200 });
   } catch (error) {
-    console.error("Cron Execution Failed:", error);
-    return json(
-      { error: "Internal Server Error during execution" },
-      { status: 500 },
-    );
+    return json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
 

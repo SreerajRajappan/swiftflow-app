@@ -1,0 +1,20 @@
+name: SwiftFlow Weekly ROI Cron
+
+on:
+  schedule:
+    # Runs at 09:30 UTC every Friday (Which is 3:00 PM IST)
+    - cron: "30 9 * * 5"
+  workflow_dispatch: # Allows you to manually trigger it from the GitHub UI for testing!
+
+jobs:
+  ping-roi-endpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up Fly.io and Trigger Weekly ROI Email
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -X POST "https://logiclooms.io/api/cron/weekly-roi" \
+          -H "Authorization: Bearer $CRON_SECRET" \
+          -H "Content-Type: application/json" \
+          --fail --silent --show-error
