@@ -134,8 +134,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 5,
   });
 
-  const shopifyAdminName = shop.split(".")[0];
-  const themeEditorUrl = `https://admin.shopify.com/store/${shopifyAdminName}/themes/current/editor?template=product&context=Apps`;
+  // const shopifyAdminName = shop.split(".")[0];
+
+  // 🚀 THE FIX: Deep Links for both Theme App Block and Checkout UI Extension
+  const apiKey = process.env.SHOPIFY_API_KEY;
+  const themeEditorUrl = `https://${shop}/admin/themes/current/editor?template=product&addAppBlockId=${apiKey}/personalizer&target=mainSection`;
+  const checkoutEditorUrl = `https://${shop}/admin/settings/checkout/editor`;
 
   const onboardingSteps = [
     {
@@ -155,13 +159,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       cta: "Set radius",
     },
     {
-      id: "badge",
-      title: "Activate Storefront Widgets (Required)",
+      id: "product-widget",
+      title: "Activate Product Page Widget",
       description:
-        "Click below to open your Theme Editor. Simply drag the 'SwiftFlow Personalizer' block under your Buy Buttons and click Save.",
+        "Auto-adds the SwiftFlow tracking block to your product pages.",
       done: totalViews > 0,
       href: themeEditorUrl,
-      cta: "Add widget to store (2 minutes)",
+      cta: "Auto-add to Theme",
+      isExternal: true,
+    },
+    {
+      id: "checkout-widget",
+      title: "Activate Checkout Delivery Badge",
+      description:
+        "Opens your Checkout Editor. Click 'Add app block' and select SwiftFlow Delivery Badge.",
+      done: false, // Requires merchant action; we rely on them clicking the deep link
+      href: checkoutEditorUrl,
+      cta: "Open Checkout Editor",
       isExternal: true,
     },
     {
