@@ -24,4 +24,4 @@ RUN npm run build
 
 ENTRYPOINT []
 
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npm run start"]
+CMD ["npm", "run", "start"]

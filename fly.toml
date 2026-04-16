@@ -24,5 +24,5 @@ primary_region = "iad"
 
 [[vm]]
   cpus = 1
-  memory = "512mb"
-  memory_mb = 512
+  memory = "1024mb"
+  memory_mb = 1024
