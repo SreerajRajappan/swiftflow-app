@@ -8,6 +8,10 @@ primary_region = "iad"
   SHOPIFY_API_KEY = "c51a636b3f088fcdb03a770d4ee64992"
   SHOPIFY_APP_URL = "https://swiftflow.logiclooms.io"
 
+# 🚀 THE FIX: Offload the 35-second DB sync to an ephemeral builder VM before deployment
+[deploy]
+  release_command = "npm run setup"
+
 [http_service]
   auto_start_machines = true
   auto_stop_machines = false
@@ -24,8 +28,8 @@ primary_region = "iad"
   source = "data"
 
 [processes]
-  # 🚀 THE FIX: Rely on the native Shopify script now that we have 1GB of RAM to prevent crashes.
-  app = "npm run docker-start"
+  # 🚀 THE FIX: Bypass the setup script. Boot the web server instantly to beat the 15s proxy timeout.
+  app = "npm run start"
 
 [[vm]]
   cpus = 1
