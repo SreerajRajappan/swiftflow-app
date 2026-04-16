@@ -10,10 +10,10 @@ primary_region = "iad"
 
 [http_service]
   auto_start_machines = true
-  auto_stop_machines = false 
+  auto_stop_machines = false
   force_https = true
   internal_port = 3000
-  min_machines_running = 1 
+  min_machines_running = 1
   processes = [ "app" ]
 
 [[mounts]]
@@ -24,9 +24,13 @@ primary_region = "iad"
   source = "data"
 
 [processes]
-  app = "npm run docker-start"
+  # 🚀 THE FIX: Drastically reduce boot time and memory. 
+  # We only push the DB schema, and explicitly use --skip-generate 
+  # to prevent the RAM-heavy client generation on every startup.
+  app = "npx prisma db push --accept-data-loss --skip-generate && npm run start"
 
 [[vm]]
   cpus = 1
-  memory = "512mb"
-  memory_mb = 512
+  # 🚀 THE FIX: 1GB RAM Shield to ensure Remix and Prisma never hit the ceiling
+  memory = "1024mb"
+  memory_mb = 1024
