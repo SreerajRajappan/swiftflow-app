@@ -3,7 +3,6 @@ primary_region = "iad"
 
 [env]
   PORT = "3000"
-  # 🚀 THE FIX: Binds the server to the public interface so the Fly Proxy can connect
   HOST = "0.0.0.0" 
   SCOPES = "write_products,read_products,read_orders,write_orders,read_script_tags,write_script_tags,read_themes,write_themes,read_checkouts,write_checkouts"
   SHOPIFY_API_KEY = "c51a636b3f088fcdb03a770d4ee64992"
@@ -11,10 +10,10 @@ primary_region = "iad"
 
 [http_service]
   auto_start_machines = true
-  auto_stop_machines = true
+  auto_stop_machines = false 
   force_https = true
   internal_port = 3000
-  min_machines_running = 0
+  min_machines_running = 1 
   processes = [ "app" ]
 
 [[mounts]]
@@ -25,7 +24,6 @@ primary_region = "iad"
   source = "data"
 
 [processes]
-  # 🚀 THE REVERT: Put the DB sync back inside the main machine so it has access to the /data volume
   app = "npm run docker-start"
 
 [[vm]]
