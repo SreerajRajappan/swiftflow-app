@@ -24,13 +24,10 @@ primary_region = "iad"
   source = "data"
 
 [processes]
-  # 🚀 THE FIX: Drastically reduce boot time and memory. 
-  # We only push the DB schema, and explicitly use --skip-generate 
-  # to prevent the RAM-heavy client generation on every startup.
-  app = "npx prisma db push --accept-data-loss --skip-generate && npm run start"
+  # 🚀 THE FIX: Rely on the native Shopify script now that we have 1GB of RAM to prevent crashes.
+  app = "npm run docker-start"
 
 [[vm]]
   cpus = 1
-  # 🚀 THE FIX: 1GB RAM Shield to ensure Remix and Prisma never hit the ceiling
   memory = "1024mb"
   memory_mb = 1024
