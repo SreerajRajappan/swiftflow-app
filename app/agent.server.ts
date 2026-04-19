@@ -7,17 +7,15 @@ import { BASIC_PLANS, PRO_PLANS, ELITE_PLANS } from "./constants";
 
 const openai = new OpenAI();
 
-// 👇 AI SAFETY: Sanitize user & merchant inputs against prompt injection
 function sanitizeForPrompt(input: string, maxLength = 300): string {
   if (!input) return "";
   return input
-    .replace(/[<>{}[\]\\]/g, "") // Strip code-injection chars
-    .replace(/ignore previous|system prompt|jailbreak/gi, "") // Stop basic LLM jailbreaks
+    .replace(/[<>{}[\]\\]/g, "")
+    .replace(/ignore previous|system prompt|jailbreak/gi, "")
     .trim()
     .slice(0, maxLength);
 }
 
-// 👇 AI SAFETY: Safe fallback if the LLM hallucinates red flags
 function generateFallbackEmail(shopName: string, productNames: string) {
   return `You left some great items in your cart! The good news is you are well within our local delivery zone for ${shopName}. Complete your order today and we'll bring your ${productNames} right to your door.`;
 }
@@ -58,10 +56,8 @@ export async function runCartRecoveryAgent(shop?: string) {
 
     if (pendingCarts.length === 0) return;
 
-    // 🚀 Process all 10 carts concurrently to beat serverless timeout limits
     await Promise.allSettled(
       pendingCarts.map(async (cart) => {
-        // -- Billing Limits Check --
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
@@ -95,7 +91,7 @@ export async function runCartRecoveryAgent(shop?: string) {
           data: { agentStatus: "PROCESSING" },
         });
 
-        if (lock.count === 0) return; // Another thread grabbed it
+        if (lock.count === 0) return;
 
         const leaks = await db.revenueLeak.findMany({
           where: { shop: cart.shop },
@@ -128,10 +124,7 @@ export async function runCartRecoveryAgent(shop?: string) {
 
           if (!settings) return;
 
-          // Safe typecast for new schema fields to prevent TypeScript compilation errors
           const safeSettings = settings as any;
-
-          // 👇 Sanitize Inputs
           const items = cart.lineItems as any[];
           const rawProductNames =
             items?.map((item) => item.title).join(", ") ||
@@ -142,7 +135,6 @@ export async function runCartRecoveryAgent(shop?: string) {
             300,
           );
 
-          // 🚀 FEATURE 2: Autonomous A/B Testing Integration
           let variant = cart.abTestVariant || "A";
           if (settings.abTestEnabled && !cart.abTestVariant) {
             variant = Math.random() > 0.5 ? "A" : "B";
@@ -162,15 +154,12 @@ export async function runCartRecoveryAgent(shop?: string) {
             abContext = `- Required promotional phrase to include exactly as written: "${safeAbMessage}"`;
           }
 
-          // 🚀 THE FIX: Correctly parse distance from leak metadata, not the cart root
           const distanceMiles = parseFloat(
             (currentLeak?.metadata as any)?.distanceMiles || "0",
           );
-
           let distanceContext = "They live in our local delivery zone.";
           let etaContext = "";
 
-          // Extract the customer's actual city/neighborhood for the prompt
           let customerLocation = "your neighborhood";
           if (cart.customerAddress) {
             const parts = cart.customerAddress.split(",");
@@ -183,14 +172,18 @@ export async function runCartRecoveryAgent(shop?: string) {
             "Invite them to complete their order for fast local delivery.";
 
           if (distanceMiles > 0) {
-            distanceContext = `They are exactly ${distanceMiles.toFixed(1)} miles away from our store.`;
-            etaContext = `Estimated delivery time for their address is ${estimateDeliveryTime(distanceMiles)}.`;
+            // 🚀 THE FIX 2.2: Localization support (Metric vs Imperial)
+            const unitSystem = safeSettings.unitSystem || "IMPERIAL";
+            const displayDistance =
+              unitSystem === "METRIC"
+                ? `${(distanceMiles * 1.60934).toFixed(1)} km`
+                : `${distanceMiles.toFixed(1)} miles`;
 
-            // 🚀 Agentic Local Urgency
+            distanceContext = `They are exactly ${displayDistance} away from our store.`;
+            etaContext = `Estimated delivery time for their address is ${estimateDeliveryTime(distanceMiles)}.`;
             routingContext = `Urgency Strategy (CRITICAL): Frame this as a live logistics update. Tell the customer that one of our drivers is already scheduled to head toward ${customerLocation} later today. Emphasize that if they complete their checkout now, we can seamlessly add their items to that specific delivery route.`;
           }
 
-          // 🚀 FEATURE 3: Time-of-Day Context Prompting
           const currentHour = new Date().getHours();
           let timeContext = "";
           if (currentHour >= 9 && currentHour <= 15) {
@@ -201,7 +194,6 @@ export async function runCartRecoveryAgent(shop?: string) {
             timeContext = `- Time Context: Neutral.`;
           }
 
-          // 🚀 FEATURE 4: Agentic Dynamic Pricing (The Unfair Advantage)
           let dynamicDiscountContext = "";
           let authorizedDiscountCode = "";
 
@@ -223,7 +215,6 @@ export async function runCartRecoveryAgent(shop?: string) {
             }
           }
 
-          // 👇 Strict System Rules Reinstated
           const SYSTEM_PROMPT = `You are an expert e-commerce copywriter for a LOCAL delivery business.
           STRICT RULES:
           1. Write exactly 2 short paragraphs. No more, no less.
@@ -255,38 +246,41 @@ export async function runCartRecoveryAgent(shop?: string) {
             temperature: 0.6,
           });
 
-          // 🚀 STRIKE 3 FIX: Defensive Extraction & Optional Chaining
-          // If OpenAI degrades, returns an empty array, or the message is missing, this safely falls back to "" without crashing
           let generatedEmailBody =
             response.choices?.[0]?.message?.content?.trim() || "";
 
-          // 👇 AI Output Validation (Red Flag Detection)
-          const redFlags = ["$", "free shipping", "discount", "promo", "% off"];
-          const merchantMessageLower = safeMerchantMessage.toLowerCase();
-          const abMessageLower = safeAbMessage.toLowerCase();
-          const authorizedDiscountLower = authorizedDiscountCode.toLowerCase();
+          // 🚀 THE FIX 2.3: Robust Regex pattern matching for unauthorized discounts
+          const DISCOUNT_PATTERNS = [
+            /\d+\s*%\s*off/i,
+            /save\s+\d+/i,
+            /knock\s+.{0,20}\s+off/i,
+            /complimentary\s+(delivery|shipping)/i,
+            /special\s+(rate|price|offer)/i,
+            /no\s+charge\s+for\s+(delivery|shipping)/i,
+            /free\s+\w+/i,
+            /discount/i,
+            /promo/i,
+            /coupon/i,
+            /\$\d+/i,
+            /\d+\s*percent/i,
+          ];
 
-          // Check if the AI invented a discount that the merchant didn't explicitly authorize
-          const hasHallucinatedDiscount = redFlags.some(
-            (flag) =>
-              generatedEmailBody.toLowerCase().includes(flag) &&
-              !merchantMessageLower.includes(flag) &&
-              !abMessageLower.includes(flag) &&
-              !(
-                authorizedDiscountLower &&
-                generatedEmailBody
-                  .toLowerCase()
-                  .includes(authorizedDiscountLower)
-              ),
-          );
+          const hasUnauthorizedOffer = DISCOUNT_PATTERNS.some((pattern) => {
+            const matchInOutput = pattern.test(generatedEmailBody);
+            const matchInMerchant =
+              pattern.test(safeMerchantMessage) ||
+              pattern.test(safeAbMessage) ||
+              (authorizedDiscountCode && pattern.test(authorizedDiscountCode));
+            return matchInOutput && !matchInMerchant;
+          });
 
           if (
-            hasHallucinatedDiscount ||
+            hasUnauthorizedOffer ||
             generatedEmailBody.length < 20 ||
             generatedEmailBody.length > 1200
           ) {
             console.warn(
-              `🚨 [AI Agent] Hallucination or empty response detected for cart ${cart.cartToken}. Using safe fallback template.`,
+              `🚨 [AI Agent] Hallucination or unauthorized offer detected for cart ${cart.cartToken}. Using safe fallback.`,
             );
             generatedEmailBody = generateFallbackEmail(
               cart.shop,
@@ -294,20 +288,12 @@ export async function runCartRecoveryAgent(shop?: string) {
             );
           }
 
-          // 🚀 The Cross-Device Persistent Cart Link
           const cartUrl =
             cart.abandonedCheckoutUrl || `https://${cart.shop}/cart`;
-
           const subjectLine =
             settings.recoveryEmailSubject ||
             "We're headed your way! Finish your order?";
-
-          const finalEmailHtml = `
-            <p>${generatedEmailBody.replace(/\n/g, "<br/>")}</p>
-            <br/>
-            <p>Resume your order here: <a href="${cartUrl}">${cartUrl}</a></p>
-          `;
-
+          const finalEmailHtml = `<p>${generatedEmailBody.replace(/\n/g, "<br/>")}</p><br/><p>Resume your order here: <a href="${cartUrl}">${cartUrl}</a></p>`;
           const finalEmailText = `${generatedEmailBody}\n\nResume your order here: ${cartUrl}`;
           const merchantReplyTo = `info@${cart.shop.replace(".myshopify.com", ".com")}`;
 
@@ -328,27 +314,24 @@ export async function runCartRecoveryAgent(shop?: string) {
                 generatedEmail: finalEmailText,
                 emailSent: true,
                 emailSentAt: new Date(),
-                abTestVariant: variant, // 🚀 Saves the specific test variant used
+                abTestVariant: variant,
               },
             });
-
-            if (currentLeak) {
+            if (currentLeak)
               await db.revenueLeak.update({
                 where: { id: currentLeak.id },
                 data: { status: "COMPLETED" },
               });
-            }
           } else {
             await db.cartRecovery.update({
               where: { id: cart.id },
               data: { agentStatus: "FAILED" },
             });
-            if (currentLeak) {
+            if (currentLeak)
               await db.revenueLeak.update({
                 where: { id: currentLeak.id },
                 data: { status: "FAILED" },
               });
-            }
           }
         } catch (agentError) {
           console.error(
@@ -359,12 +342,11 @@ export async function runCartRecoveryAgent(shop?: string) {
             where: { id: cart.id },
             data: { agentStatus: "FAILED" },
           });
-          if (currentLeak) {
+          if (currentLeak)
             await db.revenueLeak.update({
               where: { id: currentLeak.id },
               data: { status: "FAILED" },
             });
-          }
         }
       }),
     );
