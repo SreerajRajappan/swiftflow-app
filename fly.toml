@@ -1,6 +1,10 @@
 app = "swiftflow-app"
 primary_region = "iad"
 
+# 🚀 THE FIX: Provisions the database tables BEFORE the main app boots, preventing the crash loop.
+[deploy]
+  release_command = "npx prisma db push --accept-data-loss --skip-generate"
+
 [env]
   PORT = "3000"
   HOST = "0.0.0.0" 
