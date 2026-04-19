@@ -223,7 +223,7 @@ export async function runCartRecoveryAgent(shop?: string) {
             }
           }
 
-          // 👇 THE FIX: Strict System Rules Reinstated
+          // 👇 Strict System Rules Reinstated
           const SYSTEM_PROMPT = `You are an expert e-commerce copywriter for a LOCAL delivery business.
           STRICT RULES:
           1. Write exactly 2 short paragraphs. No more, no less.
@@ -255,8 +255,10 @@ export async function runCartRecoveryAgent(shop?: string) {
             temperature: 0.6,
           });
 
+          // 🚀 STRIKE 3 FIX: Defensive Extraction & Optional Chaining
+          // If OpenAI degrades, returns an empty array, or the message is missing, this safely falls back to "" without crashing
           let generatedEmailBody =
-            response.choices[0]?.message?.content?.trim() || "";
+            response.choices?.[0]?.message?.content?.trim() || "";
 
           // 👇 AI Output Validation (Red Flag Detection)
           const redFlags = ["$", "free shipping", "discount", "promo", "% off"];
@@ -284,7 +286,7 @@ export async function runCartRecoveryAgent(shop?: string) {
             generatedEmailBody.length > 1200
           ) {
             console.warn(
-              `🚨 [AI Agent] Hallucination detected for cart ${cart.cartToken}. Using safe fallback template.`,
+              `🚨 [AI Agent] Hallucination or empty response detected for cart ${cart.cartToken}. Using safe fallback template.`,
             );
             generatedEmailBody = generateFallbackEmail(
               cart.shop,

@@ -30,3 +30,6 @@ primary_region = "iad"
   cpus = 1
   memory = "1024mb"
   memory_mb = 1024
+
+[processes]
+cron = "node -e \"fetch('[your-app.fly.dev](https://your-app.fly.dev/api/cron/carts)', { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.CRON_SECRET } })\""

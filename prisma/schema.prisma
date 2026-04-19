@@ -135,8 +135,10 @@ model CartRecovery {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   
+  @@index([shop, emailSent, inDeliveryZone, createdAt])
   @@index([shop, emailSent, recovered])
   @@index([cartToken])
+  @@index([shop, createdAt])  
 }
 
 model ProductView {

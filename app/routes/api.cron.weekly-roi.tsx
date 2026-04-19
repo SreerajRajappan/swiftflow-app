@@ -14,6 +14,15 @@ function authenticateCron(request: Request) {
   return authHeader === expectedToken;
 }
 
+// 🚀 THE FIX: Helper to chunk array for concurrent batching
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunked = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunked.push(array.slice(i, i + size));
+  }
+  return chunked;
+}
+
 async function executeWeeklyROIReport() {
   console.log("📈 Starting Weekly ROI Report Dispatch...");
 
@@ -22,109 +31,123 @@ async function executeWeeklyROIReport() {
     select: { shop: true },
   });
 
+  if (activeShops.length === 0) return json({ success: true });
+
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  for (const { shop } of activeShops) {
-    try {
-      // 1. Fetch the true Account Owner's email from the Session table
-      const ownerSession = await db.session.findFirst({
-        where: { shop, accountOwner: true },
-        select: { email: true },
-      });
-      const merchantEmail = ownerSession?.email;
-      if (!merchantEmail) continue;
+  // 🚀 THE FIX: Process shops in batches of 10 to prevent Fly.io timeouts
+  // and Resend API rate limits, rather than a sequential blocking loop.
+  const BATCH_SIZE = 10;
+  const batches = chunkArray(activeShops, BATCH_SIZE);
 
-      // 2. Calculate purely Assisted/Recovered Revenue (NO Organic)
-      const conversions = await db.conversionEvent.aggregate({
-        where: {
-          shop,
-          createdAt: { gte: sevenDaysAgo },
-          source: { in: ["delivery_badge", "cart_recovery"] },
-        },
-        _sum: { orderValue: true },
-      });
-      const weeklyRevenue = conversions._sum.orderValue || 0;
+  for (let i = 0; i < batches.length; i++) {
+    const currentBatch = batches[i];
 
-      // Only send the email if we actually generated meaningful revenue
-      if (weeklyRevenue < 20) continue;
+    await Promise.allSettled(
+      currentBatch.map(async ({ shop }) => {
+        try {
+          // 1. Fetch the true Account Owner's email
+          const ownerSession = await db.session.findFirst({
+            where: { shop, accountOwner: true },
+            select: { email: true },
+          });
+          const merchantEmail = ownerSession?.email;
+          if (!merchantEmail) return;
 
-      // 3. Determine their live plan cost to calculate strict ROI
-      const { admin } = await unauthenticated.admin(shop);
-      const response = await admin.graphql(`
-        #graphql
-        query { currentAppInstallation { activeSubscriptions { name status } } }
-      `);
-      const payload = await response.json();
-      const activeSub =
-        payload.data?.currentAppInstallation?.activeSubscriptions?.find(
-          (sub: any) => sub.status === "ACTIVE",
-        );
-      const planName = activeSub?.name || "";
+          // 2. Calculate purely Assisted/Recovered Revenue
+          const conversions = await db.conversionEvent.aggregate({
+            where: {
+              shop,
+              createdAt: { gte: sevenDaysAgo },
+              source: { in: ["delivery_badge", "cart_recovery"] },
+            },
+            _sum: { orderValue: true },
+          });
+          const weeklyRevenue = conversions._sum.orderValue || 0;
 
-      // 🚀 THE FIX: Use BASIC_PLANS to build an impenetrable gate
-      const isBasic = BASIC_PLANS.includes(planName);
-      const isPro = PRO_PLANS.includes(planName);
-      const isElite = ELITE_PLANS.includes(planName);
+          if (weeklyRevenue < 20) return;
 
-      // If they are not on any of our paid tiers, DO NOT send them an ROI email
-      if (!isBasic && !isPro && !isElite) {
-        console.log(
-          `🛑 Shop ${shop} is not on an active paid plan. Skipping ROI email.`,
-        );
-        continue;
-      }
+          // 3. Determine live plan cost
+          const { admin } = await unauthenticated.admin(shop);
+          const response = await admin.graphql(`
+            #graphql
+            query { currentAppInstallation { activeSubscriptions { name status } } }
+          `);
+          const payload = await response.json();
+          const activeSub =
+            payload.data?.currentAppInstallation?.activeSubscriptions?.find(
+              (sub: any) => sub.status === "ACTIVE",
+            );
+          const planName = activeSub?.name || "";
 
-      // We now confidently know they are on a paid plan, so we map the exact cost
-      let planCost = 29.99; // Safely default to the lowest tier
-      if (isPro) planCost = 49.99;
-      if (isElite) planCost = 99.99;
+          const isBasic = BASIC_PLANS.includes(planName);
+          const isPro = PRO_PLANS.includes(planName);
+          const isElite = ELITE_PLANS.includes(planName);
 
-      // 4. The ROI Math: (Weekly Revenue / Weekly App Cost)
-      const weeklyCost = planCost / 4;
-      const roiMultiplier = Math.round(weeklyRevenue / weeklyCost);
+          if (!isBasic && !isPro && !isElite) {
+            console.log(
+              `🛑 Shop ${shop} is not on an active paid plan. Skipping ROI email.`,
+            );
+            return;
+          }
 
-      const htmlBody = `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; border: 1px solid #e1e3e5; border-radius: 12px; background-color: #ffffff;">
-          <h2 style="color: #008060; margin-top: 0;">SwiftFlow Weekly Performance 🚀</h2>
-          <p style="color: #202223; font-size: 16px;">Hi there,</p>
-          <p style="color: #202223; font-size: 16px;">Here is your weekly ROI report. This week, SwiftFlow's AI Agent and Delivery Badge directly recovered and generated:</p>
-          
-          <div style="background-color: #f4f6f8; padding: 20px; border-radius: 8px; text-align: center; margin: 25px 0;">
-            <h1 style="font-size: 42px; color: #202223; margin: 0;">$${weeklyRevenue.toFixed(2)}</h1>
-            <p style="color: #008060; font-weight: bold; margin-top: 10px; font-size: 16px;">
-              That's a ${roiMultiplier}x Return on Investment this week!
-            </p>
-          </div>
-          
-          <p style="color: #202223; font-size: 16px;">Log in to your Shopify admin to view detailed conversion charts and missed revenue hotspots.</p>
-          <br/>
-          <p style="color: #6d7175; font-size: 12px; border-top: 1px solid #e1e3e5; padding-top: 15px;">
-            You are receiving this automated report because you are the registered account owner of ${shop}.
-          </p>
-        </div>
-      `;
+          let planCost = 29.99;
+          if (isPro) planCost = 49.99;
+          if (isElite) planCost = 99.99;
 
-      // 5. Dispatch via standard Resend REST API
-      await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: "SwiftFlow Growth <reports@yourverifieddomain.com>", // Update to your domain
-          to: merchantEmail,
-          subject: `SwiftFlow recovered $${weeklyRevenue.toFixed(2)} for you this week! 💰`,
-          html: htmlBody,
-        }),
-      });
+          // 4. ROI Math
+          const weeklyCost = planCost / 4;
+          const roiMultiplier = Math.round(weeklyRevenue / weeklyCost);
 
-      console.log(
-        `✉️ [CHURN PREVENTED] Weekly ROI email sent to ${shop} (${merchantEmail})`,
-      );
-    } catch (err) {
-      console.error(`❌ Failed to send ROI email to ${shop}`, err);
+          const htmlBody = `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; border: 1px solid #e1e3e5; border-radius: 12px; background-color: #ffffff;">
+              <h2 style="color: #008060; margin-top: 0;">SwiftFlow Weekly Performance 🚀</h2>
+              <p style="color: #202223; font-size: 16px;">Hi there,</p>
+              <p style="color: #202223; font-size: 16px;">Here is your weekly ROI report. This week, SwiftFlow's AI Agent and Delivery Badge directly recovered and generated:</p>
+              
+              <div style="background-color: #f4f6f8; padding: 20px; border-radius: 8px; text-align: center; margin: 25px 0;">
+                <h1 style="font-size: 42px; color: #202223; margin: 0;">$${weeklyRevenue.toFixed(2)}</h1>
+                <p style="color: #008060; font-weight: bold; margin-top: 10px; font-size: 16px;">
+                  That's a ${roiMultiplier}x Return on Investment this week!
+                </p>
+              </div>
+              
+              <p style="color: #202223; font-size: 16px;">Log in to your Shopify admin to view detailed conversion charts and missed revenue hotspots.</p>
+              <br/>
+              <p style="color: #6d7175; font-size: 12px; border-top: 1px solid #e1e3e5; padding-top: 15px;">
+                You are receiving this automated report because you are the registered account owner of ${shop}.
+              </p>
+            </div>
+          `;
+
+          // 5. Dispatch via Resend
+          await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: "SwiftFlow Growth <reports@yourverifieddomain.com>",
+              to: merchantEmail,
+              subject: `SwiftFlow recovered $${weeklyRevenue.toFixed(2)} for you this week! 💰`,
+              html: htmlBody,
+            }),
+          });
+
+          console.log(
+            `✉️ [CHURN PREVENTED] Weekly ROI email sent to ${shop} (${merchantEmail})`,
+          );
+        } catch (err) {
+          console.error(`❌ Failed to send ROI email to ${shop}`, err);
+        }
+      }),
+    );
+
+    // 🚀 THE FIX: Breathing room between batches to respect Resend limits
+    if (i < batches.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
   }
 
