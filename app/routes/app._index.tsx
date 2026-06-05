@@ -20,6 +20,7 @@ import {
   Text,
   Layout,
   Button,
+  InlineStack,
 } from "@shopify/polaris";
 import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -651,25 +652,43 @@ export default function Index() {
             </Text>
           </Banner>
         ) : data.isBasic ? (
-          <Banner
-            tone="info"
-            action={{ content: "Upgrade to Pro", url: "/app/billing" }}
-          >
-            <Text as="p">
-              <strong>Basic Plan Active:</strong> Upgrade to Pro to unlock
-              Autonomous AI Emails and higher recovery limits.
-            </Text>
+          <Banner tone="info">
+            <InlineStack
+              align="space-between"
+              blockAlign="center"
+              wrap={false}
+              gap="400"
+            >
+              <Text as="p">
+                <strong>Basic Plan Active:</strong> Upgrade to Pro to unlock
+                Autonomous AI Emails and higher recovery limits.
+              </Text>
+              <div style={{ flexShrink: 0 }}>
+                <Button onClick={() => navigate("/app/billing")}>
+                  Upgrade to Pro
+                </Button>
+              </div>
+            </InlineStack>
           </Banner>
         ) : data.isPro ? (
-          <Banner
-            tone="info"
-            action={{ content: "Upgrade to Elite", url: "/app/billing" }}
-          >
-            <Text as="p">
-              <strong>Pro Suite Active:</strong> Scale your business by
-              upgrading to Elite Enterprise to unlock unlimited recovered
-              revenue.
-            </Text>
+          <Banner tone="info">
+            <InlineStack
+              align="space-between"
+              blockAlign="center"
+              wrap={false}
+              gap="400"
+            >
+              <Text as="p">
+                <strong>Pro Suite Active:</strong> Scale your business by
+                upgrading to Elite Enterprise to unlock unlimited recovered
+                revenue.
+              </Text>
+              <div style={{ flexShrink: 0 }}>
+                <Button onClick={() => navigate("/app/billing")}>
+                  Upgrade to Elite
+                </Button>
+              </div>
+            </InlineStack>
           </Banner>
         ) : null}
 

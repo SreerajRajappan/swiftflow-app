@@ -77,23 +77,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { billing, redirect, session } = await authenticate.admin(request);
   const formData = await request.formData();
-  const plan = formData.get("plan");
+  const plan = String(formData.get("plan"));
 
-  const returnUrl = `https://admin.shopify.com/store/${session.shop.split(".")[0]}/apps/${process.env.SHOPIFY_API_KEY}/app`;
+  // Re-establishing the correct return URL so Shopify knows where to route the user
+  const shopName = session.shop.split(".")[0];
+  const returnUrl = `https://admin.shopify.com/store/${shopName}/apps/${process.env.SHOPIFY_API_KEY}/app`;
 
   try {
     const confirmationUrl = await billing.request({
       plan: plan as any,
-      isTest: true,
-      returnUrl,
+      isTest: true, // Required for development stores
+      returnUrl: returnUrl,
     });
+
+    // Shopify requires breaking out of the iframe using target: "_parent" to show the billing screen securely
     return redirect(confirmationUrl, { target: "_parent" });
   } catch (error: any) {
+    console.error("Billing Request Error:", error);
     if (error instanceof Response) throw error;
     const reauthUrl = error.headers?.get?.(
       "X-Shopify-API-Request-Failure-Reauthorize-Url",
     );
     if (reauthUrl) return redirect(reauthUrl, { target: "_parent" });
+
     return json({ error: "Billing failed" }, { status: 500 });
   }
 };

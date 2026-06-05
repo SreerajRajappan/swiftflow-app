@@ -23,7 +23,7 @@ export const shopify = shopifyApp({
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
   billing: {
-    "Basic Recovery - Monthly": {
+    "Basic Plan - Monthly": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       trialDays: 14,
       lineItems: [
@@ -34,7 +34,7 @@ export const shopify = shopifyApp({
         },
       ],
     },
-    "Basic Recovery - Annual": {
+    "Basic Plan - Annual": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       trialDays: 14,
       lineItems: [
@@ -67,7 +67,7 @@ export const shopify = shopifyApp({
         },
       ],
     },
-    "Elite Enterprise - Monthly": {
+    "Elite Suite - Monthly": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       trialDays: 14,
       lineItems: [
@@ -78,7 +78,7 @@ export const shopify = shopifyApp({
         },
       ],
     },
-    "Elite Enterprise - Annual": {
+    "Elite Suite - Annual": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       trialDays: 14,
       lineItems: [
