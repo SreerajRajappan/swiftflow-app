@@ -28,8 +28,7 @@ api_version = "2026-04"
   uri = "/webhooks/app/scopes_update"
 
 [access_scopes]
-# 👇 Make sure read_orders is included in this list!
-scopes = "write_products,read_products,read_orders,write_orders,read_script_tags,write_script_tags,read_themes,write_themes,read_checkouts,write_checkouts"
+scopes = "write_products,read_products,read_orders,write_orders,read_script_tags,write_script_tags,read_themes,write_themes,read_checkouts,write_checkouts,read_locations"
 
 [auth]
 redirect_urls = [
