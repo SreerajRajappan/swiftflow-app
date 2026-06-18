@@ -83,10 +83,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const shopName = session.shop.split(".")[0];
   const returnUrl = `https://admin.shopify.com/store/${shopName}/apps/${process.env.SHOPIFY_API_KEY}/app`;
 
+  const isTestMode = process.env.NODE_ENV !== "production";
   try {
     const confirmationUrl = await billing.request({
       plan: plan as any,
-      isTest: true, // Required for development stores
+      isTest: isTestMode,
       returnUrl: returnUrl,
     });
 

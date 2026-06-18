@@ -29,9 +29,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const planCheckArray: any = ALL_PAID_PLANS;
 
+  const isTestMode = process.env.NODE_ENV !== "production";
   const billingCheck = await billing.check({
     plans: planCheckArray,
-    isTest: true,
+    isTest: isTestMode,
   });
 
   const subscription = billingCheck.appSubscriptions.find(

@@ -208,10 +208,10 @@ export async function runCartRecoveryAgent(shop?: string) {
             ) {
               authorizedDiscountCode = safeSettings.discountCode;
               dynamicDiscountContext = `
-               - 🚨 AUTHORIZED DISCOUNT NEGOTIATION 🚨 
-               The customer's cart is highly profitable and close by. 
-               You are authorized to offer them the 10% discount code '${authorizedDiscountCode}' to close the sale immediately. 
-               Use this code exactly as written.`;
+                - AUTHORIZED DISCOUNT: You are authorized to offer the customer the discount code "${authorizedDiscountCode}" to finalize their checkout.
+                - Describe it neutrally as "a special local discount" or "an exclusive checkout code". 
+                - Do NOT state or invent a specific percentage, fixed dollar value, or timeline unless explicitly instructed.
+                - Use the code exactly as written.`;
             }
           }
 

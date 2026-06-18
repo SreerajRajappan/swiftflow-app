@@ -10,7 +10,7 @@ import {
   Box,
   Banner,
 } from "@shopify/polaris";
-import { CheckCircleIcon, XCircleIcon } from "@shopify/polaris-icons";
+import { CheckCircleIcon, XCircleIcon } from "@shopify/polaris-icons"; // Switched to CircleIcon
 import { useNavigate } from "@remix-run/react";
 
 export interface Step {
@@ -30,7 +30,7 @@ export function OnboardingChecklist({
 }: {
   steps: Step[];
   fetcher: any;
-  shop?: string; // Optional prop to pre-fill their store URL in the email
+  shop?: string;
 }) {
   const navigate = useNavigate();
   const completedCount = steps.filter((s) => s.done).length;
@@ -38,7 +38,6 @@ export function OnboardingChecklist({
 
   const [isVisible, setIsVisible] = useState(true);
 
-  // Auto-hide the checklist 3 seconds after they reach 100% completion
   useEffect(() => {
     if (isComplete) {
       const timer = setTimeout(() => {
@@ -48,27 +47,23 @@ export function OnboardingChecklist({
     }
   }, [isComplete]);
 
-  // Once the 3 seconds are up, remove the component from the DOM completely
-  if (!isVisible) {
-    return null;
-  }
+  if (!isVisible) return null;
 
-  // Show the Success Banner during that 3-second window
   if (isComplete) {
     return (
       <Box paddingBlockEnd="400">
         <Banner tone="success" title="Onboarding Complete! 🎉">
           <Text as="p">
-            You have successfully configured SwiftFlow. Your local delivery
-            revenue engine is now fully active. Hiding checklist...
+            Your local delivery configuration is active. Loving SwiftFlow?
+            Consider leaving a quick review in the App Store to support our
+            development team! Hiding checklist...
           </Text>
         </Banner>
       </Box>
     );
   }
 
-  // Generate the pre-filled support email link
-  const supportEmail = "hello@swiftflow.io"; // Change this to your actual support email
+  const supportEmail = "hello@logiclooms.io";
   const emailSubject = encodeURIComponent("Concierge Setup Request");
   const emailBody = encodeURIComponent(
     `Hi SwiftFlow team,\n\nI need help setting up the app. Please request collaborator access and set it up for me!\n\nMy Shopify URL is: ${shop || "[INSERT YOUR STORE URL]"}`,
@@ -83,7 +78,7 @@ export function OnboardingChecklist({
             <Text as="h2" variant="headingMd">
               🚀 Required Setup ({completedCount}/{steps.length} complete)
             </Text>
-            <Badge tone="attention">
+            <Badge tone={isComplete ? "success" : "attention"}>
               {completedCount === 0 ? "Not started" : `${completedCount} done`}
             </Badge>
           </InlineStack>
@@ -97,9 +92,10 @@ export function OnboardingChecklist({
                 wrap={false}
               >
                 <Box paddingBlockStart="025">
+                  {/* Switched to clean neutral circles for uncompleted steps */}
                   <Icon
                     source={step.done ? CheckCircleIcon : XCircleIcon}
-                    tone={step.done ? "success" : "critical"}
+                    tone={step.done ? "success" : "subdued"}
                   />
                 </Box>
                 <BlockStack gap="100">
@@ -120,7 +116,12 @@ export function OnboardingChecklist({
                         variant="plain"
                         onClick={() => {
                           if (step.isExternal) {
-                            window.open(step.href, "_blank");
+                            // Enforce clean breakout to parent target window for external admin paths
+                            window.open(
+                              step.href,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
                           } else {
                             navigate(step.href);
                           }
@@ -135,8 +136,6 @@ export function OnboardingChecklist({
             ))}
           </BlockStack>
 
-          {/* Concierge "Done-For-You" Banner */}
-          {/* Concierge "Done-For-You" Banner */}
           <Box paddingBlockStart="200">
             <Banner
               tone="info"
